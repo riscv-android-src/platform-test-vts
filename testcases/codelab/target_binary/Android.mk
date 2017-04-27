@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2016 The Android Open Source Project
+# Copyright (C) 2017 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,5 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+LOCAL_PATH := $(call my-dir)
 
-include $(call all-subdir-makefiles)
+include $(CLEAR_VARS)
+LOCAL_MODULE := vts_codelab_target_binary
+LOCAL_MODULE_TAGS := optional
+LOCAL_SRC_FILES := vts_codelab_target_binary.c
+LOCAL_SHARED_LIBRARIES := libutils libcutils liblog
+LOCAL_C_INCLUDES += bionic
+LOCAL_CFLAGS := -Werror -Wall
+include $(BUILD_NATIVE_TEST)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := VtsCodelabTargetBinary
+VTS_CONFIG_SRC_DIR := testcases/codelab/target_binary
+include test/vts/tools/build/Android.host_config.mk
