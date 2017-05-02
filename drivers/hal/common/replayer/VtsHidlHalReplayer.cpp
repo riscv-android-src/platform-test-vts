@@ -15,6 +15,8 @@
  */
 #include "replayer/VtsHidlHalReplayer.h"
 
+#include <fcntl.h>
+#include <unistd.h>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -22,6 +24,7 @@
 #include <string>
 
 #include <cutils/properties.h>
+#include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/text_format.h>
 
 #include "fuzz_tester/FuzzerBase.h"
@@ -30,6 +33,7 @@
 #include "test/vts/proto/ComponentSpecificationMessage.pb.h"
 #include "test/vts/proto/VtsProfilingMessage.pb.h"
 #include "utils/StringUtil.h"
+#include "utils/VtsProfilingUtil.h"
 
 using namespace std;
 
@@ -82,45 +86,6 @@ bool VtsHidlHalReplayer::LoadComponentSpecification(const string& package,
   return true;
 }
 
-bool VtsHidlHalReplayer::ParseTrace(const string& trace_file,
-    vector<VtsProfilingRecord>* call_msgs,
-    vector<VtsProfilingRecord>* result_msgs) {
-  std::ifstream in(trace_file, std::ios::in);
-  bool new_record = true;
-  string record_str;
-  string line;
-
-  while (getline(in, line)) {
-    // Assume records are separated by '\n'.
-    if (line.empty()) {
-      new_record = false;
-    }
-    if (new_record) {
-      record_str += line + "\n";
-    } else {
-      unique_ptr<VtsProfilingRecord> record(new VtsProfilingRecord());
-      if (!google::protobuf::TextFormat::MergeFromString(record_str,
-                                                         record.get())) {
-        cerr << __func__ << ": Can't parse a given function message: "
-            << record_str << endl;
-        return false;
-      }
-      if (record->event() == InstrumentationEventType::SERVER_API_ENTRY
-          || record->event() == InstrumentationEventType::CLIENT_API_ENTRY
-          || record->event() == InstrumentationEventType::SYNC_CALLBACK_ENTRY
-          || record->event() == InstrumentationEventType::ASYNC_CALLBACK_ENTRY
-          || record->event() == InstrumentationEventType::PASSTHROUGH_ENTRY) {
-        call_msgs->push_back(*record);
-      } else {
-        result_msgs->push_back(*record);
-      }
-      new_record = true;
-      record_str.clear();
-    }
-  }
-  return true;
-}
-
 bool VtsHidlHalReplayer::ReplayTrace(const string& spec_lib_file_path,
     const string& trace_file, const string& hal_service_name) {
   if (!wrapper_.LoadInterfaceSpecificationLibrary(spec_lib_file_path.c_str())) {
@@ -138,19 +103,48 @@ bool VtsHidlHalReplayer::ReplayTrace(const string& spec_lib_file_path,
   }
 
   // Parse the trace file to get the sequence of function calls.
-  vector<VtsProfilingRecord> call_msgs;
-  vector<VtsProfilingRecord> result_msgs;
-  if (!ParseTrace(trace_file, &call_msgs, &result_msgs)) {
-    cerr << __func__ << ": couldn't parse trace file: " << trace_file << endl;
+  int fd =
+      open(trace_file.c_str(), O_RDONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+  if (fd < 0) {
+    cerr << "Can not open trace file: " << trace_file
+         << "error: " << std::strerror(errno);
     return false;
   }
-  // Replay each function call from the trace and verify the results.
+
+  google::protobuf::io::FileInputStream input(fd);
+
+  // long record_num = 0;
   string interface = "";
   FuzzerBase* fuzzer = NULL;
-  for (size_t i = 0; i < call_msgs.size(); i++) {
-    VtsProfilingRecord call_msg = call_msgs[i];
-    VtsProfilingRecord expected_result_msg = result_msgs[i];
-    cout << __func__ << ": replay function: " << call_msg.DebugString();
+  VtsProfilingRecord call_msg;
+  VtsProfilingRecord expected_result_msg;
+  while (readOneDelimited(&call_msg, &input) &&
+         readOneDelimited(&expected_result_msg, &input)) {
+    if (call_msg.event() != InstrumentationEventType::SERVER_API_ENTRY &&
+        call_msg.event() != InstrumentationEventType::CLIENT_API_ENTRY &&
+        call_msg.event() != InstrumentationEventType::SYNC_CALLBACK_ENTRY &&
+        call_msg.event() != InstrumentationEventType::ASYNC_CALLBACK_ENTRY &&
+        call_msg.event() != InstrumentationEventType::PASSTHROUGH_ENTRY) {
+      cerr << "Expected a call message but got message with event: "
+           << call_msg.event();
+      continue;
+    }
+    if (expected_result_msg.event() !=
+            InstrumentationEventType::SERVER_API_EXIT &&
+        expected_result_msg.event() !=
+            InstrumentationEventType::CLIENT_API_EXIT &&
+        expected_result_msg.event() !=
+            InstrumentationEventType::SYNC_CALLBACK_EXIT &&
+        expected_result_msg.event() !=
+            InstrumentationEventType::ASYNC_CALLBACK_EXIT &&
+        expected_result_msg.event() !=
+            InstrumentationEventType::PASSTHROUGH_EXIT) {
+      cerr << "Expected a result message but got message with event: "
+           << call_msg.event();
+      continue;
+    }
+
+    cout << __func__ << ": replay function: " << call_msg.func_msg().name();
 
     // Load spec file and get fuzzer.
     if (interface != call_msg.interface()) {
@@ -184,10 +178,10 @@ bool VtsHidlHalReplayer::ReplayTrace(const string& spec_lib_file_path,
     if (!fuzzer->VerifyResults(expected_result_msg.func_msg(), result_msg)) {
       // Verification is not strict, i.e. if fail, output error message and
       // continue the process.
-      cerr << __func__ << ": verification fail.\nexpected_result: "
-          << expected_result_msg.func_msg().DebugString() << "\nactual_result: "
-          << result_msg.DebugString() << endl;
+      cerr << __func__ << ": verification fail." << endl;
     }
+    call_msg.Clear();
+    expected_result_msg.Clear();
   }
   return true;
 }
