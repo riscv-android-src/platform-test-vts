@@ -33,6 +33,7 @@ vts_test_lib_hidl_packages := \
   android.hardware.camera.metadata@3.2-vts.driver \
   android.hardware.camera.provider@2.4-vts.driver \
   android.hardware.configstore@1.0-vts.driver \
+  android.hardware.configstore@1.1-vts.driver \
   android.hardware.contexthub@1.0-vts.driver \
   android.hardware.drm@1.0-vts.driver \
   android.hardware.dumpstate@1.0-vts.driver \
@@ -54,6 +55,7 @@ vts_test_lib_hidl_packages := \
   android.hardware.power@1.0-vts.driver \
   android.hardware.power@1.1-vts.driver \
   android.hardware.radio@1.0-vts.driver \
+  android.hardware.radio@1.1-vts.driver \
   android.hardware.radio.deprecated@1.0-vts.driver \
   android.hardware.renderscript@1.0-vts.driver \
   android.hardware.sensors@1.0-vts.driver \
@@ -62,6 +64,7 @@ vts_test_lib_hidl_packages := \
   android.hardware.tv.cec@1.0-vts.driver \
   android.hardware.tv.input@1.0-vts.driver \
   android.hardware.usb@1.0-vts.driver \
+  android.hardware.usb@1.1-vts.driver \
   android.hardware.vibrator@1.0-vts.driver \
   android.hardware.vr@1.0-vts.driver \
   android.hardware.wifi@1.0-vts.driver \
@@ -82,6 +85,7 @@ vts_test_lib_hidl_packages := \
   android.hardware.camera.metadata@3.2-vts.profiler \
   android.hardware.camera.provider@2.4-vts.profiler \
   android.hardware.configstore@1.0-vts.profiler \
+  android.hardware.configstore@1.1-vts.profiler \
   android.hardware.contexthub@1.0-vts.profiler \
   android.hardware.drm@1.0-vts.profiler \
   android.hardware.dumpstate@1.0-vts.profiler \
@@ -104,6 +108,7 @@ vts_test_lib_hidl_packages := \
   android.hardware.power@1.0-vts.profiler \
   android.hardware.power@1.1-vts.profiler \
   android.hardware.radio@1.0-vts.profiler \
+  android.hardware.radio@1.1-vts.profiler \
   android.hardware.radio.deprecated@1.0-vts.profiler \
   android.hardware.renderscript@1.0-vts.profiler \
   android.hardware.sensors@1.0-vts.profiler \
@@ -112,6 +117,7 @@ vts_test_lib_hidl_packages := \
   android.hardware.tv.cec@1.0-vts.profiler \
   android.hardware.tv.input@1.0-vts.profiler \
   android.hardware.usb@1.0-vts.profiler \
+  android.hardware.usb@1.1-vts.profiler \
   android.hardware.vibrator@1.0-vts.profiler \
   android.hardware.vr@1.0-vts.profiler \
   android.hardware.wifi@1.0-vts.profiler \
@@ -127,6 +133,7 @@ vts_test_lib_hidl_packages += \
   VtsHalBroadcastradioV1_0TargetTest \
   VtsHalCameraProviderV2_4TargetTest \
   VtsHalConfigstoreV1_0TargetTest \
+  VtsHalConfigstoreV1_1TargetTest \
   VtsHalContexthubV1_0TargetTest \
   VtsHalDrmV1_0TargetTest \
   VtsHalGatekeeperV1_0TargetTest \
@@ -147,6 +154,7 @@ vts_test_lib_hidl_packages += \
   VtsHalPowerV1_0TargetTest \
   VtsHalPowerV1_1TargetTest \
   VtsHalRadioV1_0TargetTest \
+  VtsHalRadioV1_1TargetTest \
   VtsHalRenderscriptV1_0TargetTest \
   VtsHalSapV1_0TargetTest \
   VtsHalSensorsV1_0TargetTest \
@@ -155,6 +163,7 @@ vts_test_lib_hidl_packages += \
   thermal_hidl_stress_test \
   VtsHalTvInputV1_0TargetTest \
   VtsHalUsbV1_0TargetTest \
+  VtsHalUsbV1_1TargetTest \
   VtsHalVibratorV1_0TargetTest \
   VtsHalVrV1_0TargetTest \
   VtsHalWifiV1_0TargetTest \
