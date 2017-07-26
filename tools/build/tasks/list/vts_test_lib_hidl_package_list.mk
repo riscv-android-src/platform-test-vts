@@ -51,6 +51,7 @@ vts_test_lib_hidl_packages := \
   android.hardware.media.omx@1.0-vts.driver \
   android.hardware.memtrack@1.0-vts.driver \
   android.hardware.nfc@1.0-vts.driver \
+  android.hardware.oemlock@1.0-vts.driver \
   android.hardware.power@1.0-vts.driver \
   android.hardware.power@1.1-vts.driver \
   android.hardware.radio@1.0-vts.driver \
@@ -66,6 +67,7 @@ vts_test_lib_hidl_packages := \
   android.hardware.usb@1.1-vts.driver \
   android.hardware.vibrator@1.0-vts.driver \
   android.hardware.vr@1.0-vts.driver \
+  android.hardware.weaver@1.0-vts.driver \
   android.hardware.wifi@1.0-vts.driver \
   android.hardware.wifi@1.1-vts.driver \
   android.hardware.wifi.offload@1.0-vts.driver \
@@ -104,6 +106,7 @@ vts_test_lib_hidl_packages := \
   android.hardware.media.omx@1.0-vts.profiler \
   android.hardware.memtrack@1.0-vts.profiler \
   android.hardware.nfc@1.0-vts.profiler \
+  android.hardware.oemlock@1.0-vts.profiler \
   android.hardware.power@1.0-vts.profiler \
   android.hardware.power@1.1-vts.profiler \
   android.hardware.radio@1.0-vts.profiler \
@@ -119,6 +122,7 @@ vts_test_lib_hidl_packages := \
   android.hardware.usb@1.1-vts.profiler \
   android.hardware.vibrator@1.0-vts.profiler \
   android.hardware.vr@1.0-vts.profiler \
+  android.hardware.weaver@1.0-vts.profiler \
   android.hardware.wifi@1.0-vts.profiler \
   android.hardware.wifi@1.1-vts.profiler \
   android.hardware.wifi.offload@1.0-vts.profiler \
@@ -150,6 +154,7 @@ vts_test_lib_hidl_packages += \
   VtsHalMediaOmxV1_0TargetVideoDecTest \
   VtsHalMemtrackV1_0TargetTest \
   VtsHalNfcV1_0TargetTest \
+  VtsHalOemLockV1_0TargetTest \
   VtsHalPowerV1_0TargetTest \
   VtsHalPowerV1_1TargetTest \
   VtsHalRadioV1_0TargetTest \
@@ -166,6 +171,7 @@ vts_test_lib_hidl_packages += \
   VtsHalVibratorV1_0TargetTest \
   VtsHalVibratorV1_1TargetTest \
   VtsHalVrV1_0TargetTest \
+  VtsHalWeaverV1_0TargetTest \
   VtsHalWifiV1_0TargetTest \
   VtsHalWifiV1_1TargetTest \
   VtsHalWifiNanV1_0TargetTest \
