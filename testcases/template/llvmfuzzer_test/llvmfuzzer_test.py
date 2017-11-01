@@ -1,4 +1,3 @@
-#!/usr/bin/env python3.4
 #
 # Copyright (C) 2016 The Android Open Source Project
 #
@@ -19,54 +18,48 @@ import logging
 import os
 
 from vts.runners.host import asserts
-from vts.runners.host import base_test_with_webdb
+from vts.runners.host import base_test
 from vts.runners.host import const
 from vts.runners.host import keys
 from vts.runners.host import test_runner
 from vts.utils.python.controllers import adb
-from vts.utils.python.controllers import android_device
+
 from vts.utils.python.common import list_utils
+from vts.utils.python.os import path_utils
 
 from vts.testcases.template.llvmfuzzer_test import llvmfuzzer_test_config as config
 
-class LLVMFuzzerTest(base_test_with_webdb.BaseTestWithWebDbClass):
+
+class LLVMFuzzerTest(base_test.BaseTestClass):
     """Runs fuzzer tests on target.
 
     Attributes:
         _dut: AndroidDevice, the device under test as config
-        _shell: ShellMirrorObject, shell mirror
         _testcases: string list, list of testcases to run
     """
+
     def setUpClass(self):
         """Creates a remote shell instance, and copies data files."""
         required_params = [
             keys.ConfigKeys.IKEY_DATA_FILE_PATH,
-            keys.ConfigKeys.IKEY_BINARY_TEST_SOURCES,
             config.ConfigKeys.FUZZER_CONFIGS
         ]
         self.getUserParams(required_params)
 
-        self._testcases = list_utils.ExpandItemDelimiters(
-            self.binary_test_sources,
-            const.LIST_ITEM_DELIMITER,
-            strip=True,
-            to_str=True)
+        self._testcases = map(lambda x: str(x), self.fuzzer_configs.keys())
 
+        logging.info("Testcases: %s", self._testcases)
         logging.info("%s: %s", keys.ConfigKeys.IKEY_DATA_FILE_PATH,
-            self.data_file_path)
-        logging.info("%s: %s", keys.ConfigKeys.IKEY_BINARY_TEST_SOURCES,
-            self._testcases)
+                     self.data_file_path)
         logging.info("%s: %s", config.ConfigKeys.FUZZER_CONFIGS,
-            self.fuzzer_configs)
+                     self.fuzzer_configs)
 
-        self._dut = self.registerController(android_device)[0]
-        self._dut.shell.InvokeTerminal("one")
-        self._shell = self._dut.shell.one
-        self._shell.Execute("mkdir %s -p" % config.FUZZER_TEST_DIR)
+        self._dut = self.registerController(android_device, False)[0]
+        self._dut.adb.shell("mkdir %s -p" % config.FUZZER_TEST_DIR)
 
     def tearDownClass(self):
         """Deletes all copied data."""
-        self._shell.Execute("rm -rf %s" % config.FUZZER_TEST_DIR)
+        self._dut.adb.shell("rm -rf %s" % config.FUZZER_TEST_DIR)
 
     def PushFiles(self, testcase):
         """adb pushes testcase file to target.
@@ -74,7 +67,8 @@ class LLVMFuzzerTest(base_test_with_webdb.BaseTestWithWebDbClass):
         Args:
             testcase: string, path to executable fuzzer.
         """
-        push_src = os.path.join(self.data_file_path, config.FUZZER_SRC_DIR, testcase)
+        push_src = os.path.join(self.data_file_path, config.FUZZER_SRC_DIR,
+                                testcase)
         self._dut.adb.push("%s %s" % (push_src, config.FUZZER_TEST_DIR))
         logging.info("Adb pushed: %s", testcase)
 
@@ -85,14 +79,54 @@ class LLVMFuzzerTest(base_test_with_webdb.BaseTestWithWebDbClass):
             fuzzer_config: dict, contains configuration for the fuzzer.
 
         Returns:
-            string, of form "-<flag0>=<val0> -<flag1>=<val1> ... "
+            string, command line flags for fuzzer executable.
         """
-        fuzzer_params = config.FUZZER_PARAMS.copy()
-        fuzzer_params.update(fuzzer_config.get("fuzzer_params", {}))
 
-        test_flags = " ".join(
-            ["-%s=%s" % (k, v) for k, v in fuzzer_params.items()])
-        return test_flags
+        def _SerializeVTSFuzzerParams(params):
+            """Creates VTS command line flags for fuzzer executable.
+
+            Args:
+                params: dict, contains flags and their values.
+
+            Returns:
+                string, of form "--<flag0>=<val0> --<flag1>=<val1> ... "
+            """
+            VTS_SPEC_FILES = "vts_spec_files"
+            VTS_EXEC_SIZE = "vts_exec_size"
+            DELIMITER = ":"
+
+            # vts_spec_files is a string list, will be serialized like this:
+            # [a, b, c] -> "a:b:c"
+            vts_spec_files = params.get(VTS_SPEC_FILES, {})
+            target_vts_spec_files = DELIMITER.join(map(
+                lambda x: path_utils.JoinTargetPath(config.FUZZER_SPEC_DIR, x),
+                vts_spec_files))
+            flags = "--%s=\"%s\" " % (VTS_SPEC_FILES, target_vts_spec_files)
+
+            vts_exec_size = params.get(VTS_EXEC_SIZE, {})
+            flags += "--%s=%s" % (VTS_EXEC_SIZE, vts_exec_size)
+            return flags
+
+        def _SerializeLLVMFuzzerParams(params):
+            """Creates LLVM libfuzzer command line flags for fuzzer executable.
+
+            Args:
+                params: dict, contains flags and their values.
+
+            Returns:
+                string, of form "--<flag0>=<val0> --<flag1>=<val1> ... "
+            """
+            return " ".join(["-%s=%s" % (k, v) for k, v in params.items()])
+
+        vts_fuzzer_params = fuzzer_config.get("vts_fuzzer_params", {})
+
+        llvmfuzzer_params = config.FUZZER_PARAMS.copy()
+        llvmfuzzer_params.update(fuzzer_config.get("llvmfuzzer_params", {}))
+
+        vts_fuzzer_flags = _SerializeVTSFuzzerParams(vts_fuzzer_params)
+        llvmfuzzer_flags = _SerializeLLVMFuzzerParams(llvmfuzzer_params)
+
+        return vts_fuzzer_flags + " -- " + llvmfuzzer_flags
 
     def CreateCorpus(self, fuzzer, fuzzer_config):
         """Creates a corpus directory on target.
@@ -105,12 +139,14 @@ class LLVMFuzzerTest(base_test_with_webdb.BaseTestWithWebDbClass):
             string, path to corpus directory on the target.
         """
         corpus = fuzzer_config.get("corpus", [])
-        corpus_dir = os.path.join(config.FUZZER_TEST_DIR, "%s_corpus" % fuzzer)
+        corpus_dir = path_utils.JoinTargetPath(config.FUZZER_TEST_DIR,
+                                               "%s_corpus" % fuzzer)
 
-        self._shell.Execute("mkdir %s -p" % corpus_dir)
+        self._dut.adb.shell("mkdir %s -p" % corpus_dir)
         for idx, corpus_entry in enumerate(corpus):
             corpus_entry = corpus_entry.replace("x", "\\x")
-            corpus_entry_file = os.path.join(corpus_dir, "input%s" % idx)
+            corpus_entry_file = path_utils.JoinTargetPath(
+                corpus_dir, "input%s" % idx)
             cmd = "echo -ne '%s' > %s" % (str(corpus_entry), corpus_entry_file)
             # Vts shell drive doesn't play nicely with escape characters,
             # so we use adb shell.
@@ -130,14 +166,17 @@ class LLVMFuzzerTest(base_test_with_webdb.BaseTestWithWebDbClass):
         test_flags = self.CreateFuzzerFlags(fuzzer_config)
         corpus_dir = self.CreateCorpus(fuzzer, fuzzer_config)
 
-        chmod_cmd = "chmod -R 755 %s" % os.path.join(config.FUZZER_TEST_DIR, fuzzer)
-        self._shell.Execute(chmod_cmd)
+        chmod_cmd = "chmod -R 755 %s" % path_utils.JoinTargetPath(
+            config.FUZZER_TEST_DIR, fuzzer)
+        self._dut.adb.shell(chmod_cmd)
 
         cd_cmd = "cd %s" % config.FUZZER_TEST_DIR
-        ld_path = "LD_LIBRARY_PATH=/data/local/tmp/32:/data/local/tmp/64:$LD_LIBRARY_PATH"
+        ld_path = "LD_LIBRARY_PATH=/data/local/tmp/64:/data/local/tmp/32:$LD_LIBRARY_PATH"
         test_cmd = "./%s" % fuzzer
 
-        fuzz_cmd = "%s && %s %s %s %s" % (cd_cmd, ld_path, test_cmd, corpus_dir, test_flags)
+        fuzz_cmd = "%s && %s %s %s %s > /dev/null" % (cd_cmd, ld_path,
+                                                      test_cmd, corpus_dir,
+                                                      test_flags)
         logging.info("Executing: %s", fuzz_cmd)
         # TODO(trong): vts shell doesn't handle timeouts properly, change this after it does.
         try:
@@ -168,7 +207,7 @@ class LLVMFuzzerTest(base_test_with_webdb.BaseTestWithWebDbClass):
 
         # output is string of a hexdump from crash report file.
         # From the example above, output would be "0123456789abcdef".
-        output = self._shell.Execute(cmd)[const.STDOUT][0]
+        output = self._dut.adb.shell(cmd)
         remove_chars = ["\r", "\t", "\n", " "]
         for char in remove_chars:
             output = output.replace(char, "")
@@ -178,7 +217,8 @@ class LLVMFuzzerTest(base_test_with_webdb.BaseTestWithWebDbClass):
         for offset in xrange(0, len(output), 2):
             crash_report += "\\x%s" % output[offset:offset + 2]
 
-        logging.info('FUZZER_TEST_CRASH_REPORT for %s: "%s"', fuzzer, crash_report)
+        logging.info('FUZZER_TEST_CRASH_REPORT for %s: "%s"', fuzzer,
+                     crash_report)
 
     # TODO(trong): differentiate between crashes and sanitizer rule violations.
     def AssertTestResult(self, fuzzer, result):
@@ -192,6 +232,7 @@ class LLVMFuzzerTest(base_test_with_webdb.BaseTestWithWebDbClass):
             fuzzer: string, name of fuzzer executable.
             result: dict(str, str, int), command results from shell.
         """
+        logging.info("Test result: %s" % result)
         if not self._dut.hasBooted():
             self._dut.waitForBootCompletion()
             asserts.fail("%s left the device in unresponsive state." % fuzzer)

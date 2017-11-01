@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.4
+#!/usr/bin/env python
 #
 # Copyright (C) 2016 The Android Open Source Project
 #
@@ -27,17 +27,19 @@ class CoverageReportTest(unittest.TestCase):
     """Unit tests for CoverageReport of vts.utils.python.coverage.
     """
 
+    GOLDEN_GCNO_PATH = 'testdata/sample.gcno'
+    GOLDEN_GCDA_PATH = 'testdata/sample.gcda'
+
     @classmethod
     def setUpClass(cls):
-        root_dir = os.path.join(
-            os.getenv('ANDROID_BUILD_TOP'),
-            'test/vts/utils/python/coverage/testdata/')
-        gcno_path = os.path.join(root_dir, 'sample.gcno')
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        gcno_path = os.path.join(dir_path, cls.GOLDEN_GCNO_PATH)
         with open(gcno_path, 'rb') as file:
             gcno_summary = gcno_parser.GCNOParser(file).Parse()
-        gcda_path = os.path.join(root_dir, 'sample.gcda')
+        gcda_path = os.path.join(dir_path, cls.GOLDEN_GCDA_PATH)
         with open(gcda_path, 'rb') as file:
-            gcda_parser.GCDAParser(file, gcno_summary).Parse()
+            parser = gcda_parser.GCDAParser(file)
+            parser.Parse(gcno_summary)
         cls.gcno_summary = gcno_summary
 
     def testGenerateLineCoverageVector(self):

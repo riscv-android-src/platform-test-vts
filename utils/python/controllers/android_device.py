@@ -1,4 +1,3 @@
-#!/usr/bin/env python3.4
 #
 #   Copyright 2016 - The Android Open Source Project
 #
@@ -19,25 +18,24 @@ from builtins import open
 
 import logging
 import os
+import socket
+import subprocess
+import threading
 import time
 import traceback
-import threading
-import socket
 
+from vts.runners.host import errors
 from vts.runners.host import keys
 from vts.runners.host import logger as vts_logger
 from vts.runners.host import signals
 from vts.runners.host import utils
+from vts.runners.host.tcp_client import vts_tcp_client
 from vts.utils.python.controllers import adb
 from vts.utils.python.controllers import event_dispatcher
 from vts.utils.python.controllers import fastboot
 from vts.utils.python.controllers import sl4a_client
-from vts.runners.host.tcp_client import vts_tcp_client
-from vts.utils.python.mirror import hal_mirror
-from vts.utils.python.mirror import shell_mirror
-from vts.utils.python.mirror import lib_mirror
-from vts.runners.host import errors
-import subprocess
+from vts.utils.python.mirror import mirror_tracker
+
 
 VTS_CONTROLLER_CONFIG_NAME = "AndroidDevice"
 VTS_CONTROLLER_REFERENCE_NAME = "android_devices"
@@ -47,6 +45,8 @@ ANDROID_DEVICE_PICK_ALL_TOKEN = "*"
 ANDROID_DEVICE_ADB_LOGCAT_PARAM_KEY = "adb_logcat_param"
 ANDROID_DEVICE_EMPTY_CONFIG_MSG = "Configuration is empty, abort!"
 ANDROID_DEVICE_NOT_LIST_CONFIG_MSG = "Configuration should be a list, abort!"
+PORT_RETRY_COUNT = 3
+SL4A_APK_NAME = "com.googlecode.android_scripting"
 
 ANDROID_PRODUCT_TYPE_UNKNOWN = "unknown"
 
@@ -58,16 +58,18 @@ THREAD_SLEEP_TIME = 1
 # Max number of attempts that the client can make to connect to the agent
 MAX_AGENT_CONNECT_RETRIES = 10
 
+
 class AndroidDeviceError(signals.ControllerError):
     pass
 
 
-def create(configs):
+def create(configs, start_services=True):
     """Creates AndroidDevice controller objects.
 
     Args:
         configs: A list of dicts, each representing a configuration for an
                  Android device.
+        start_services: boolean, controls whether services will be started.
 
     Returns:
         A list of AndroidDevice objects.
@@ -89,7 +91,8 @@ def create(configs):
         if ad.serial not in connected_ads:
             raise DoesNotExistError(("Android device %s is specified in config"
                                      " but is not attached.") % ad.serial)
-    _startServicesOnAds(ads)
+    if start_services:
+        _startServicesOnAds(ads)
     return ads
 
 
@@ -199,17 +202,15 @@ def get_instances_with_configs(configs):
         try:
             serial = c.pop(keys.ConfigKeys.IKEY_SERIAL)
         except KeyError:
-            raise AndroidDeviceError(
-                ('Required value %s is missing in '
-                 'AndroidDevice config %s.') % (keys.ConfigKeys.IKEY_SERIAL,
-                                                c))
+            raise AndroidDeviceError(('Required value %s is missing in '
+                                      'AndroidDevice config %s.') %
+                                     (keys.ConfigKeys.IKEY_SERIAL, c))
         try:
             product_type = c.pop(keys.ConfigKeys.IKEY_PRODUCT_TYPE)
         except KeyError:
-            logging.error(
-                'Required value %s is missing in '
-                'AndroidDevice config %s.',
-                keys.ConfigKeys.IKEY_PRODUCT_TYPE, c)
+            logging.error('Required value %s is missing in '
+                          'AndroidDevice config %s.',
+                          keys.ConfigKeys.IKEY_PRODUCT_TYPE, c)
             product_type = ANDROID_PRODUCT_TYPE_UNKNOWN
 
         ad = AndroidDevice(serial, product_type)
@@ -349,7 +350,9 @@ class AndroidDevice(object):
                        known, ANDROID_PRODUCT_TYPE_UNKNOWN otherwise.
     """
 
-    def __init__(self, serial="", product_type=ANDROID_PRODUCT_TYPE_UNKNOWN,
+    def __init__(self,
+                 serial="",
+                 product_type=ANDROID_PRODUCT_TYPE_UNKNOWN,
                  device_callback_port=5010):
         self.serial = serial
         self._product_type = product_type
@@ -408,7 +411,7 @@ class AndroidDevice(object):
     def verityEnabled(self):
         """True if verity is enabled for this device."""
         try:
-            verified = self.adb.shell('getprop partition.system.verified').decode("utf-8")
+            verified = self.getProp("partition.system.verified")
             if not verified:
                 return False
         except adb.AdbError:
@@ -430,30 +433,77 @@ class AndroidDevice(object):
                 if len(tokens) > 1:
                     return tokens[1].lower()
             return None
-        out = self.adb.shell('getprop ro.build.product')
-        model = out.decode("utf-8").strip().lower()
+        model = self.getProp("ro.build.product").lower()
         if model == "sprout":
             return model
         else:
-            out = self.adb.shell('getprop ro.product.name')
-            model = out.decode("utf-8").strip().lower()
+            model = self.getProp("ro.product.name").lower()
             return model
 
     @property
     def cpu_abi(self):
         """CPU ABI (Application Binary Interface) of the device."""
-        out = self.adb.shell('getprop ro.product.cpu.abi')
+        out = self.getProp("ro.product.cpu.abi")
         if not out:
             return "unknown"
 
-        cpu_abi = out.decode("utf-8").strip().lower()
+        cpu_abi = out.lower()
         return cpu_abi
+
+    def getCpuAbiList(self, bitness=""):
+        """Gets list of supported ABIs from property.
+
+        Args:
+            bitness: 32 or 64. If the argument is not specified, this method
+                     returns both 32 and 64-bit ABIs.
+
+        Returns:
+            A list of strings, the supported ABIs.
+        """
+        out = self.getProp("ro.product.cpu.abilist" + str(bitness))
+        return out.lower().split(",") if out else []
 
     @property
     def is64Bit(self):
         """True if device is 64 bit."""
         out = self.adb.shell('uname -m')
         return "64" in out
+
+    @property
+    def total_memory(self):
+        """Total memory on device.
+
+        Returns:
+            long, total memory in bytes. -1 if cannot get memory information.
+        """
+        total_memory_command = 'cat /proc/meminfo | grep MemTotal'
+        out = self.adb.shell(total_memory_command)
+        value_unit = out.split(':')[-1].strip().split(' ')
+
+        if len(value_unit) != 2:
+            logging.error('Cannot get memory information. %s', out)
+            return -1
+
+        value, unit = value_unit
+
+        try:
+            value = int(value)
+        except ValueError:
+            logging.error('Unrecognized total memory value: %s', value_unit)
+            return -1
+
+        unit = unit.lower()
+        if unit == 'kb':
+            value *= 1024
+        elif unit == 'mb':
+            value *= 1024 * 1024
+        elif unit == 'b':
+            pass
+        else:
+            logging.error('Unrecognized total memory unit: %s', value_unit)
+            return -1
+
+        return value
 
     @property
     def libPaths(self):
@@ -511,7 +561,7 @@ class AndroidDevice(object):
             raise AndroidDeviceError(("Android device %s already has an adb "
                                       "logcat thread going on. Cannot start "
                                       "another one.") % self.serial)
-        f_name = "adblog,%s,%s.txt" % (self.model, self.serial)
+        f_name = "adblog_%s_%s.txt" % (self.model, self.serial)
         utils.create_dir(self.log_path)
         logcat_file_path = os.path.join(self.log_path, f_name)
         try:
@@ -530,7 +580,10 @@ class AndroidDevice(object):
             raise AndroidDeviceError(
                 "Android device %s does not have an ongoing adb logcat collection."
                 % self.serial)
-        utils.stop_standing_subprocess(self.adb_logcat_process)
+        try:
+            utils.stop_standing_subprocess(self.adb_logcat_process)
+        except utils.VTSUtilsError as e:
+            logging.error("Cannot stop adb logcat. %s", e)
         self.adb_logcat_process = None
 
     def takeBugReport(self, test_name, begin_time):
@@ -571,8 +624,7 @@ class AndroidDevice(object):
             True if booted, False otherwise.
         """
         try:
-            out = self.adb.shell("getprop sys.boot_completed")
-            completed = out.decode('utf-8').strip()
+            completed = self.getProp("sys.boot_completed")
             if completed == '1':
                 return True
         except adb.AdbError:
@@ -580,17 +632,69 @@ class AndroidDevice(object):
             # process, which is normal. Ignoring these errors.
             return False
 
-    def stop(self):
-        """Stops Android runtime."""
-        self.adb.shell("stop")
-        self.adb.shell("setprop sys.boot_completed 0")
-
     def start(self):
         """Starts Android runtime and waits for ACTION_BOOT_COMPLETED."""
+        logging.info("starting Android Runtime")
         self.adb.shell("start")
         self.waitForBootCompletion()
+        logging.info("Android Runtime started")
 
-    def reboot(self):
+    def stop(self):
+        """Stops Android runtime."""
+        logging.info("stopping Android Runtime")
+        self.adb.shell("stop")
+        self.setProp("sys.boot_completed", 0)
+        logging.info("Android Runtime stopped")
+
+    def setProp(self, name, value):
+        """Calls setprop shell command.
+
+        Args:
+            name: string, the name of a system property to set
+            value: any type, value will be converted to string. Quotes in value
+                   is not supported at this time; if value contains a quote,
+                   this method will log an error and return.
+
+        Raises:
+            AdbError, if name contains invalid character
+        """
+        if name is None or value is None:
+            logging.error("name or value of system property "
+                          "should not be None. No property is set.")
+            return
+
+        value = str(value)
+
+        if "'" in value or "\"" in value:
+            logging.error("Quotes in value of system property "
+                          "is not yet supported. No property is set.")
+            return
+
+        self.adb.shell("setprop %s \"%s\"" % (name, value))
+
+    def getProp(self, name):
+        """Calls getprop shell command.
+
+        Args:
+            name: string, the name of a system property to get
+
+        Returns:
+            string, value of the property. If name does not exist; an empty
+            string will be returned. decode("utf-8") and strip() will be called
+            on the output before returning; None will be returned if input
+            name is None
+
+        Raises:
+            AdbError, if name contains invalid character
+        """
+        if name is None:
+            logging.error("name of system property should not be None.")
+            return None
+
+        out = self.adb.shell("getprop %s" % name)
+        return out.decode("utf-8").strip()
+
+    def reboot(self, restart_services=True):
         """Reboots the device and wait for device to complete booting.
 
         This is probably going to print some error messages in console. Only
@@ -603,19 +707,24 @@ class AndroidDevice(object):
         if self.isBootloaderMode:
             self.fastboot.reboot()
             return
-        has_adb_log = self.isAdbLogcatOn
-        has_vts_agent = True if self.vts_agent_process else False
-        if has_adb_log:
-            self.stopAdbLogcat()
-        if has_vts_agent:
-            self.stopVtsAgent()
+
+        if restart_services:
+            has_adb_log = self.isAdbLogcatOn
+            has_vts_agent = True if self.vts_agent_process else False
+            if has_adb_log:
+                self.stopAdbLogcat()
+            if has_vts_agent:
+                self.stopVtsAgent()
+
         self.adb.reboot()
         self.waitForBootCompletion()
         self.rootAdb()
-        if has_adb_log:
-            self.startAdbLogcat()
-        if has_vts_agent:
-            self.startVtsAgent()
+
+        if restart_services:
+            if has_adb_log:
+                self.startAdbLogcat()
+            if has_vts_agent:
+                self.startVtsAgent()
 
     def startServices(self):
         """Starts long running services on the android device.
@@ -626,6 +735,7 @@ class AndroidDevice(object):
         """
         enable_vts_agent = getattr(self, "enable_vts_agent", True)
         enable_sl4a = getattr(self, "enable_sl4a", False)
+        enable_sl4a_ed = getattr(self, "enable_sl4a_ed", False)
         try:
             self.startAdbLogcat()
         except:
@@ -638,13 +748,19 @@ class AndroidDevice(object):
             logging.info("device_command_port: %s", self.device_command_port)
             if not self.host_command_port:
                 self.host_command_port = adb.get_available_host_port()
-            self.adb.tcp_forward(self.host_command_port, self.device_command_port)
-            self.hal = hal_mirror.HalMirror(self.host_command_port,
-                                            self.host_callback_port)
-            self.lib = lib_mirror.LibMirror(self.host_command_port)
-            self.shell = shell_mirror.ShellMirror(self.host_command_port)
+            self.adb.tcp_forward(self.host_command_port,
+                                 self.device_command_port)
+            self.hal = mirror_tracker.MirrorTracker(self.host_command_port,
+                                            self.host_callback_port, True)
+            self.lib = mirror_tracker.MirrorTracker(self.host_command_port)
+            self.shell = mirror_tracker.MirrorTracker(self.host_command_port)
         if enable_sl4a:
-            self.startSl4aClient()
+            try:
+                self.startSl4aClient(enable_sl4a_ed)
+            except Exception as e:
+                self.log.exception("Failed to start SL4A!")
+                self.log.exception(e)
+                raise
 
     def stopServices(self):
         """Stops long running services on the android device.
@@ -670,16 +786,17 @@ class AndroidDevice(object):
             "rm -f /data/local/tmp/vts_driver_*",
             "rm -f /data/local/tmp/vts_agent_callback*"
         ]
-        kill_commands = ["killall vts_hal_agent32", "killall vts_hal_agent64",
-                         "killall fuzzer32", "killall fuzzer64",
-                         "killall vts_shell_driver32",
-                         "killall vts_shell_driver64"]
+        kill_commands = [
+            "killall vts_hal_agent32", "killall vts_hal_agent64",
+            "killall vts_hal_driver32", "killall vts_hal_driver64",
+            "killall vts_shell_driver32", "killall vts_shell_driver64"
+        ]
         cleanup_commands.extend(kill_commands)
         chmod_commands = [
             "chmod 755 %s/32/vts_hal_agent32" % DEFAULT_AGENT_BASE_DIR,
             "chmod 755 %s/64/vts_hal_agent64" % DEFAULT_AGENT_BASE_DIR,
-            "chmod 755 %s/32/fuzzer32" % DEFAULT_AGENT_BASE_DIR,
-            "chmod 755 %s/64/fuzzer64" % DEFAULT_AGENT_BASE_DIR,
+            "chmod 755 %s/32/vts_hal_driver32" % DEFAULT_AGENT_BASE_DIR,
+            "chmod 755 %s/64/vts_hal_driver64" % DEFAULT_AGENT_BASE_DIR,
             "chmod 755 %s/32/vts_shell_driver32" % DEFAULT_AGENT_BASE_DIR,
             "chmod 755 %s/64/vts_shell_driver64" % DEFAULT_AGENT_BASE_DIR
         ]
@@ -695,19 +812,21 @@ class AndroidDevice(object):
         bits = ['64', '32'] if self.is64Bit else ['32']
         for bitness in bits:
             vts_agent_log_path = os.path.join(self.log_path,
-                     "vts_agent_" + bitness + ".log")
+                                              "vts_agent_" + bitness + ".log")
             cmd = (
                 'adb -s {s} shell LD_LIBRARY_PATH={path}/{bitness} '
                 '{path}/{bitness}/vts_hal_agent{bitness}'
-                ' {path}/32/fuzzer32 {path}/64/fuzzer64 {path}/spec'
-                ' {path}/32/vts_shell_driver32 {path}/64/vts_shell_driver64 >> {log}'
-            ).format(s=self.serial,
-                     bitness=bitness,
-                     path=DEFAULT_AGENT_BASE_DIR,
-                     log=vts_agent_log_path)
+                ' {path}/32/vts_hal_driver32 {path}/64/vts_hal_driver64 {path}/spec'
+                ' {path}/32/vts_shell_driver32 {path}/64/vts_shell_driver64 >> {log} 2>&1'
+            ).format(
+                s=self.serial,
+                bitness=bitness,
+                path=DEFAULT_AGENT_BASE_DIR,
+                log=vts_agent_log_path)
             try:
                 self.vts_agent_process = utils.start_standing_subprocess(
                     cmd, check_health_delay=1)
+                break
             except utils.VTSUtilsError as e:
                 logging.exception(e)
                 with open(vts_agent_log_path, 'r') as log_file:
@@ -723,9 +842,13 @@ class AndroidDevice(object):
     def stopVtsAgent(self):
         """Stop the HAL agent running on the AndroidDevice.
         """
-        if self.vts_agent_process:
+        if not self.vts_agent_process:
+            return
+        try:
             utils.stop_standing_subprocess(self.vts_agent_process)
-            self.vts_agent_process = None
+        except utils.VTSUtilsError as e:
+            logging.error("Cannot stop VTS agent. %s", e)
+        self.vts_agent_process = None
 
     @property
     def product_type(self):
@@ -747,18 +870,233 @@ class AndroidDevice(object):
         """
         self._sl4a_sessions = {}
         self._sl4a_event_dispatchers = {}
-        if not self.sl4a_host_port or not adb.is_port_available(self.sl4a_host_port):
-            self.sl4a_host_port = adb.get_available_host_port()
-        self.adb.tcp_forward(self.sl4a_host_port, self.sl4a_target_port)
+
+        for i in range(PORT_RETRY_COUNT):
+            try:
+                if self.isRogueSl4aRunning():
+                    self.log.info("Stop rogue sl4a")
+                    self.stopSl4a()
+                    time.sleep(15)
+                sl4a_client.start_sl4a(
+                    self.adb, device_side_port=self.sl4a_target_port)
+                time.sleep(5)
+
+                self.setupSl4aPort()
+
+                droid = self._createNewSl4aSession()
+            except sl4a_client.Error as e:
+                logging.exception("error: %s", e)
+                logging.info("sl4a starting (%s)", self.serial)
+                sl4a_client.start_sl4a(
+                    self.adb, device_side_port=self.sl4a_target_port)
+                droid = self._createNewSl4aSession()
+
+            if handle_event:
+                ed = self._getSl4aEventDispatcher(droid)
+                ed.start()
+
+    def setupSl4aPort(self):
+        forward_success = False
+        last_error = None
+        for _ in range(PORT_RETRY_COUNT):
+            if not self.sl4a_host_port or not adb.is_port_available(
+                    self.sl4a_host_port):
+                self.sl4a_host_port = adb.get_available_host_port()
+            logging.info("sl4a port host %s target %s", self.sl4a_host_port,
+                     self.sl4a_target_port)
+            try:
+                self.adb.tcp_forward(self.sl4a_host_port,
+                                     self.sl4a_target_port)
+                forward_success = True
+                break
+            except adb.AdbError as e:
+                last_error = e
+                pass
+        if not forward_success:
+            self.log.error(last_error)
+            raise last_error
+
+    def stopSl4a(self):
+        """Stops an SL4A apk on a target device."""
         try:
-            droid = self._createNewSl4aSession()
-        except sl4a_client.Error:
-            sl4a_client.start_sl4a(self.adb)
-            droid = self._createNewSl4aSession()
-        self.sl4a = droid
-        if handle_event:
-            ed = self._getSl4aEventDispatcher(droid)
-        self.sl4a_event = ed
+            self.adb.shell(
+                "am force-stop %s" % SL4A_APK_NAME, ignore_status=True)
+        except adb.AdbError as e:
+            self.log.warn("Fail to stop package %s: %s", SL4A_APK_NAME, e)
+
+    def getPackagePid(self, package_name):
+        """Gets the pid for a given package. Returns None if not running.
+
+        Args:
+            package_name: The name of the package.
+
+        Returns:
+            The first pid found under a given package name. None if no process
+            was found running the package.
+
+        Raises:
+            AndroidDeviceError if the output of the phone's process list was
+            in an unexpected format.
+        """
+        for cmd in ("ps -A", "ps"):
+            try:
+                out = self.adb.shell(
+                    '%s | grep "S %s"' % (cmd, package_name),
+                    ignore_status=True)
+                if package_name not in out:
+                    continue
+                try:
+                    pid = int(out.split()[1])
+                    self.log.info('apk %s has pid %s.', package_name, pid)
+                    return pid
+                except (IndexError, ValueError) as e:
+                    # Possible ValueError from string to int cast.
+                    # Possible IndexError from split.
+                    self.log.warn('Command \"%s\" returned output line: '
+                                  '\"%s\".\nError: %s', cmd, out, e)
+            except Exception as e:
+                self.log.warn(
+                    'Device fails to check if %s running with \"%s\"\n'
+                    'Exception %s', package_name, cmd, e)
+        self.log.debug("apk %s is not running", package_name)
+        return None
+
+    def isRogueSl4aRunning(self):
+        """Returns true if SL4A was started by a process other than ACTS.
+
+        If SL4A is started by a process other than ACTS, the port will be set to
+        something other than sl4a_client.DEFAULT_DEVICE_SIDE_PORT. This causes
+        SL4A to be up and running, but nearly impossible to talk to.
+        """
+        sl4a_pid = self.getPackagePid(SL4A_APK_NAME)
+        if sl4a_pid is not None:
+            sl4a_port_hex = '{0:02x}'.format(
+                sl4a_client.DEFAULT_DEVICE_SIDE_PORT).upper()
+            port_is_open = (
+                # Get the tcp info
+                'cat /proc/%s/net/tcp | '
+                # Remove the space padding
+                'tr -s " " | '
+                # Grab the 4th column (rem_address)
+                'cut -d " " -f 4 | '
+                # Grab the port from that address
+                'cut -d ":" -f 2 | '
+                # Find the port we are looking for
+                'grep %s')
+            # If the resulting string from the command is empty, SL4A does not
+            # have a port open for ACTS to listen to.
+            return not bool(
+                self.adb.shell(port_is_open % (sl4a_pid, sl4a_port_hex)))
+        return False
+
+    @property
+    def droid(self):
+        """The default SL4A session to the device if exist, None otherwise."""
+        if not hasattr(self,
+                       "_sl4a_sessions") or len(self._sl4a_sessions) == 0:
+            return None
+        try:
+            session_id = sorted(self._sl4a_sessions)[0]
+            result = self._sl4a_sessions[session_id][0]
+            logging.info("key %s val %s", session_id, result)
+            return result
+        except IndexError as e:
+            logging.exception(e)
+            return None
+
+    @property
+    def droids(self):
+        """A list of the active SL4A sessions on this device."""
+        if not hasattr(self,
+                       "_sl4a_sessions") or len(self._sl4a_sessions) == 0:
+            return None
+        keys = sorted(self._sl4a_sessions)
+        results = []
+        for key in keys:
+            results.append(self._sl4a_sessions[key][0])
+        return results
+
+    @property
+    def ed(self):
+        """The default SL4A session to the device if exist, None otherwise."""
+        if (not hasattr(self, "_sl4a_event_dispatchers") or
+            len(self._sl4a_event_dispatchers) == 0):
+            return None
+        logging.info("self._sl4a_event_dispatchers: %s", self._sl4a_event_dispatchers)
+        try:
+            session_id = sorted(self._sl4a_event_dispatchers)[0]
+            return self._sl4a_event_dispatchers[session_id]
+        except IndexError:
+            return None
+
+    @property
+    def sl4a(self):
+        """The default SL4A session to the device if exist, None otherwise."""
+        try:
+            return self._sl4a_sessions[sorted(self._sl4a_sessions)[0]][0]
+        except IndexError:
+            return None
+
+    @property
+    def sl4as(self):
+        """A list of the active SL4A sessions on this device.
+
+        If multiple connections exist for the same session, only one connection
+        is listed.
+        """
+        keys = sorted(self._sl4a_sessions)
+        results = []
+        for key in keys:
+            results.append(self._sl4a_sessions[key][0])
+        return results
+
+    def getVintfXml(self, use_lshal=True, is_framework_manifest=False):
+        """Reads the vendor interface manifest Xml.
+
+        Args:
+            use_hal: bool, set True to use lshal command and False to fetch
+                     manifest.xml directly.
+            is_framework_manifest: bool, set True to fetch /system/manifest.xml,
+                                   False to fetch /vendor/manifest.xml, effective
+                                   when use_lshal is False.
+
+        Returns:
+            Vendor interface manifest string.
+        """
+        try:
+            if use_lshal:
+                stdout = self.adb.shell('"lshal --init-vintf 2> /dev/null"')
+            elif is_framework_manifest:
+                stdout = self.adb.shell('cat /system/manifest.xml')
+            else:
+                try:
+                    stdout = self.adb.shell('cat /odm/manifest.xml')
+                except adb.AdbError as e:
+                    logging.debug("Can't read /odm/manifest.xml; fall back to "
+                                  "use /vendor/manifest.xml instead.")
+                    stdout = self.adb.shell('cat /vendor/manifest.xml')
+            return str(stdout)
+        except adb.AdbError as e:
+            return None
+
+    def getCompMatrixXml(self, is_framework_comp_matrix=True):
+        """Reads the vendor interface manifest Xml.
+
+        Args:
+            is_framework_comp_matrix: bool, set True to fetch /system/compatibility_matrix.xml,
+                                      False to fetch /vendor/compatibility_matrix.xml
+
+        Returns:
+            Compatibility matrix content string.
+        """
+        try:
+            if is_framework_comp_matrix:
+                stdout = self.adb.shell('cat /system/compatibility_matrix.xml')
+            else:
+                stdout = self.adb.shell('cat /vendor/compatibility_matrix.xml')
+            return str(stdout)
+        except adb.AdbError as e:
+            return None
 
     def _getSl4aEventDispatcher(self, droid):
         """Return an EventDispatcher for an sl4a session
@@ -802,6 +1140,7 @@ class AndroidDevice(object):
         if droid.uid in self._sl4a_sessions:
             raise sl4a_client.Error(
                 "SL4A returned an existing uid for a new session. Abort.")
+        logging.debug("set sl4a_session[%s]", droid.uid)
         self._sl4a_sessions[droid.uid] = [droid]
         return droid
 
@@ -821,7 +1160,8 @@ class AndroidDevice(object):
         """
         if session_id not in self._sl4a_sessions:
             raise DoesNotExistError("Session %d doesn't exist." % session_id)
-        droid = sl4a_client.Sl4aClient(port=self.sl4a_host_port, uid=session_id)
+        droid = sl4a_client.Sl4aClient(
+            port=self.sl4a_host_port, uid=session_id)
         droid.open(cmd=sl4a_client.Sl4aCommand.CONTINUE)
         return droid
 

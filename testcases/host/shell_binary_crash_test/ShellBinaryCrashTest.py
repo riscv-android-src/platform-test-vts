@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.4
+#!/usr/bin/env python
 #
 # Copyright (C) 2016 The Android Open Source Project
 #
@@ -18,19 +18,20 @@
 import logging
 
 from vts.runners.host import asserts
-from vts.runners.host import base_test_with_webdb
+from vts.runners.host import base_test
 from vts.runners.host import test_runner
 from vts.utils.python.controllers import android_device
 from vts.runners.host import const
 
 
-class ShellBinaryCrashTest(base_test_with_webdb.BaseTestWithWebDbClass):
+class ShellBinaryCrashTest(base_test.BaseTestClass):
     """A binary crash test case for the shell driver."""
 
     EXIT_CODE_CRASH = 133
     EXIT_CODE_SEGFAULT = 139
 
     def setUpClass(self):
+        self.run_as_vts_self_test = False
         self.dut = self.registerController(android_device)[0]
 
     def testCrashBinary(self):

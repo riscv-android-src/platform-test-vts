@@ -13,60 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# for platform/bionic/tests
-vts_test_lib_packages := \
-    libBionicStandardTests \
-    libfortify1-tests-gcc \
-    libfortify2-tests-gcc \
-    libfortify1-tests-clang \
-    libfortify2-tests-clang \
-    libBionicTests \
-    libBionicGtestMain \
-    libBionicLoaderTests \
-    libBionicCtsGtestMain \
-
 # for platform/bionic/tests/libs
 vts_test_lib_packages += \
-    libgnu-hash-table-library \
-    libsysv-hash-table-library \
-    libdlext_test_norelro \
-    libtest_simple \
-    libtest_nodelete_1 \
-    libtest_nodelete_2 \
-    libtest_nodelete_dt_flags_1 \
-    libtest_with_dependency_loop \
-    libtest_with_dependency_loop_a \
-    libtest_with_dependency_loop_b_tmp \
-    libtest_with_dependency_loop_b \
-    libtest_with_dependency_loop_c \
-    libtest_relo_check_dt_needed_order \
-    libtest_relo_check_dt_needed_order_1 \
-    libtest_relo_check_dt_needed_order_2 \
-    libtest_ifunc \
-    libtest_atexit \
-    libdl_preempt_test_1 \
-    libdl_preempt_test_2 \
-    libdl_test_df_1_global \
-    libtest_dlsym_df_1_global \
-    libtest_dlsym_weak_func \
-    libtest_dlsym_from_this \
-    libtest_dlsym_from_this_child \
-    libtest_dlsym_from_this_grandchild \
-    libtest_empty \
-    libtest_dlopen_weak_undefined_func \
-    libtest_dlopen_from_ctor \
-    libtest_dlopen_from_ctor_main \
-
-# for fuzz tests
-vts_test_lib_packages += \
-    libclang_rt.asan-arm-android \
-    libclang_rt.asan-aarch64-android \
-    libclang_rt.asan-i686-android \
-    libvts_proto_fuzzer \
-    libvts_proto_fuzzer_proto \
-
-# for platform/bionic/tests/libs extra libs
-vts_test_lib_packages += \
+    cfi_test_helper \
+    cfi_test_helper2 \
+    libcfi-test \
+    libcfi-test-bad \
+    libfortify1-tests-clang \
+    libfortify2-tests-clang \
     libtest_dt_runpath_a \
     libtest_dt_runpath_b \
     libtest_dt_runpath_c \
@@ -118,7 +72,13 @@ vts_test_lib_packages += \
     libtest_dlsym_weak_func \
     libtest_dt_runpath_d \
     libtest_empty \
+    libtest_init_fini_order_child \
+    libtest_init_fini_order_grand_child \
+    libtest_init_fini_order_root2 \
+    libtest_init_fini_order_root \
     libtest_ifunc \
+    libtest_ifunc_variable \
+    libtest_ifunc_variable_impl \
     libtest_nodelete_1 \
     libtest_nodelete_2 \
     libtest_nodelete_dt_flags_1 \
@@ -154,9 +114,36 @@ vts_test_lib_packages += \
     libtest_invalid-zero_shstrndx.so \
     libtest_invalid-textrels.so \
     libtest_invalid-textrels2.so \
+    preinit_getauxval_test_helper \
+    preinit_syscall_test_helper \
     libnstest_private_external \
     libnstest_dlopened \
     libnstest_private \
     libnstest_root_not_isolated \
     libnstest_root \
     libnstest_public \
+    libnstest_public_internal \
+    ld_preload_test_helper \
+    ld_preload_test_helper_lib1 \
+    ld_preload_test_helper_lib2 \
+    ld_config_test_helper \
+    ld_config_test_helper_lib1 \
+    ld_config_test_helper_lib2 \
+    ld_config_test_helper_lib3
+
+# for drm tests
+vts_test_lib_packages += \
+    libvtswidevine \
+
+# for fuzz tests
+vts_test_lib_packages += \
+    libclang_rt.asan-arm-android \
+    libclang_rt.asan-aarch64-android \
+    libclang_rt.asan-i686-android \
+    libvts_func_fuzzer_utils \
+    libvts_proto_fuzzer \
+    libvts_proto_fuzzer_proto \
+
+# for HAL interface hash test
+vts_test_lib_packages += \
+    libhidl-gen-hash \

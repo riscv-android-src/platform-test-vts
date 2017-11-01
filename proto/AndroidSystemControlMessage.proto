@@ -125,6 +125,9 @@ message AndroidSystemControlCommandMessage {
   // for CALL_API and VTS_AGENT_COMMAND_INVOKE_SYSCALL
   optional bytes arg = 4001;
 
+  // UID of a caller on the driver-side.
+  optional bytes driver_caller_uid = 4101;
+
   // for VTS_AGENT_COMMAND_EXECUTE_SHELL_COMMAND
   repeated bytes shell_command = 5001;
 }
@@ -158,6 +161,9 @@ message AndroidSystemControlResponseMessage {
 message AndroidSystemCallbackRequestMessage {
   // callback id for the message sent to the TCP Server.
   optional bytes id = 1;
+
+  // the name of a callback (e.g., <class name>::<method name>).
+  optional bytes name = 2;
 
   // args
   repeated VariableSpecificationMessage arg = 11;

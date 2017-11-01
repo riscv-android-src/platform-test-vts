@@ -1,10 +1,23 @@
 # VTS User Manual
 
+Linux is officially supported for building and running VTS. Building on Windows is not supported, but it is possible to [run VTS on Windows](#run_vts) with Python, Java, and ADB installed.
+
+The following instructions assume Linux environment.
+
 ## 1. Setup
 
 ### 1.1. Host setup
 
+Please follow:
+
 * [Setup Manual](setup/index.md)
+
+(Optional)
+During VTS test runs, required Python packages are downloaded from the [Python Package Index](https://pypi.python.org/simple/). There is an option to instead install these packages from a local directory during test runtime by predownloading the packages. First run the lunch command, then set an environment variable VTS_PYPI_PATH as a new local directory to host the Python packages. Then run the download-pypi-packages.sh script:
+
+* `$ cd ${branch}`
+
+* `$ . test/vts/script/download-pypi-packages.sh`
 
 ### 1.2. Checkout master git repository
 
@@ -62,11 +75,25 @@ Let's connect an Android device and a host computer using a USB cable.
 
 ## 2. Run VTS Tests
 
-### 2.1. Run a VTS test plan
+### <a name="run_vts" /> 2.1. Run a VTS test plan
+
+For Linux users,
 
 `$ vts-tradefed`
 
 `> run vts`
+
+For Windows users, please build on Linux. Then copy the following zip file to Windows and extract it.
+
+`out/host/linux-x86/vts/android-vts.zip`
+
+Launch the batch file in the extracted folder.
+
+`$ android-vts\tools\vts-tradefed_win.bat`
+
+`> run vts`
+
+Example stdout:
 
 ```
 …
@@ -101,20 +128,7 @@ Then select `device_logcat_<timestamp>.zip` and device_logcat.txt in that zip fi
 
 ### 3.1. List of VTS Plans
 
-* __vts__: All default VTS tests (To be finalized before Android O release).
-* __vts-camera-its__: For camera ITS (Image Test Suite) tests ported to VTS.
-* __vts-codelab__: For VTS codelab.
-* __vts-coverage__: For VTS code coverage tests.
-* __vts-fuzz__: For VTS Fuzz tests.
-* __vts-gce__: For VTS tests which can be run on Google Compute Engine (GCE).
-* __vts-hal-hidl-profiling__: For VTS HIDL HAL profiling tasks.
-* __vts-hal-hidl__: For VTS HIDL HAL tests.
-* __vts-host__: For VTS host-driven tests.
-* __vts-kernel__: For VTS kernel tests.
-* __vts-library__: For VTS native library tests.
-* __vts-presubmit__: For VTS pre-submit tests.
-* __vts-security__: For VTS security tests.
-* __vts-system__: For VTS system tests.
+Documented at [here](../tools/vts-tradefed/res/config/plans.md).
 
 ### 3.2. Run kernel test cases
 

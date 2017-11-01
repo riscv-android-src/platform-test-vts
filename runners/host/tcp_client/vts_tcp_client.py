@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 #
 # Copyright (C) 2016 The Android Open Source Project
 #
@@ -32,18 +31,20 @@ from google.protobuf import text_format
 
 TARGET_IP = os.environ.get("TARGET_IP", None)
 TARGET_PORT = os.environ.get("TARGET_PORT", None)
-_DEFAULT_SOCKET_TIMEOUT_SECS = 120
+_DEFAULT_SOCKET_TIMEOUT_SECS = 1800
 _SOCKET_CONN_TIMEOUT_SECS = 60
 _SOCKET_CONN_RETRY_NUMBER = 5
-COMMAND_TYPE_NAME = {1: "LIST_HALS",
-                     2: "SET_HOST_INFO",
-                     101: "CHECK_DRIVER_SERVICE",
-                     102: "LAUNCH_DRIVER_SERVICE",
-                     103: "VTS_AGENT_COMMAND_READ_SPECIFICATION",
-                     201: "LIST_APIS",
-                     202: "CALL_API",
-                     203: "VTS_AGENT_COMMAND_GET_ATTRIBUTE",
-                     301: "VTS_AGENT_COMMAND_EXECUTE_SHELL_COMMAND"}
+COMMAND_TYPE_NAME = {
+    1: "LIST_HALS",
+    2: "SET_HOST_INFO",
+    101: "CHECK_DRIVER_SERVICE",
+    102: "LAUNCH_DRIVER_SERVICE",
+    103: "VTS_AGENT_COMMAND_READ_SPECIFICATION",
+    201: "LIST_APIS",
+    202: "CALL_API",
+    203: "VTS_AGENT_COMMAND_GET_ATTRIBUTE",
+    301: "VTS_AGENT_COMMAND_EXECUTE_SHELL_COMMAND"
+}
 
 
 class VtsTcpClient(object):
@@ -53,15 +54,42 @@ class VtsTcpClient(object):
         connection: a TCP socket instance.
         channel: a file to write and read data.
         _mode: the connection mode (adb_forwarding or ssh_tunnel)
+        timeout: tcp connection timeout.
     """
 
-    def __init__(self, mode="adb_forwarding"):
+    def __init__(self, mode="adb_forwarding", timeout=_DEFAULT_SOCKET_TIMEOUT_SECS):
         self.connection = None
         self.channel = None
         self._mode = mode
+        self.timeout = timeout
 
-    def Connect(self, ip=TARGET_IP, command_port=TARGET_PORT,
-                callback_port=None, retry=_SOCKET_CONN_RETRY_NUMBER):
+    @property
+    def timeout(self):
+        """Get TCP connection timeout.
+
+        This function assumes timeout property setter is in __init__before
+        any getter calls.
+
+        Returns:
+            int, timeout
+        """
+        return self._timeout
+
+    @timeout.setter
+    def timeout(self, timeout):
+        """Set TCP connection timeout.
+
+        Args:
+            timeout: int, TCP connection timeout in seconds.
+        """
+        self._timeout = timeout
+
+    def Connect(self,
+                ip=TARGET_IP,
+                command_port=TARGET_PORT,
+                callback_port=None,
+                retry=_SOCKET_CONN_RETRY_NUMBER,
+                timeout=None):
         """Connects to a target device.
 
         Args:
@@ -72,6 +100,7 @@ class VtsTcpClient(object):
                            server.
             retry: int, the number of times to retry connecting before giving
                    up.
+            timeout: tcp connection timeout.
 
         Returns:
             True if success, False otherwise
@@ -85,10 +114,10 @@ class VtsTcpClient(object):
             return False
 
         for i in xrange(retry):
+            connection_timeout = self._timeout if timeout is None else timeout
             try:
                 self.connection = socket.create_connection(
-                    (ip, command_port), _SOCKET_CONN_TIMEOUT_SECS)
-                self.connection.settimeout(_DEFAULT_SOCKET_TIMEOUT_SECS)
+                    (ip, command_port), timeout=connection_timeout)
             except socket.error as e:
                 # Wait a bit and retry.
                 logging.exception("Connect failed %s", e)
@@ -99,8 +128,8 @@ class VtsTcpClient(object):
         self.channel = self.connection.makefile(mode="brw")
 
         if callback_port is not None:
-            self.SendCommand(SysMsg_pb2.SET_HOST_INFO,
-                             callback_port=callback_port)
+            self.SendCommand(
+                SysMsg_pb2.SET_HOST_INFO, callback_port=callback_port)
             resp = self.RecvResponse()
             if (resp.response_code != SysMsg_pb2.SUCCESS):
                 return False
@@ -127,14 +156,20 @@ class VtsTcpClient(object):
 
     def CheckDriverService(self, service_name):
         """RPC to CHECK_DRIVER_SERVICE."""
-        self.SendCommand(SysMsg_pb2.CHECK_DRIVER_SERVICE,
-                         service_name=service_name)
+        self.SendCommand(
+            SysMsg_pb2.CHECK_DRIVER_SERVICE, service_name=service_name)
         resp = self.RecvResponse()
         return (resp.response_code == SysMsg_pb2.SUCCESS)
 
-    def LaunchDriverService(self, driver_type, service_name, bits,
-                            file_path=None, target_class=None, target_type=None,
-                            target_version=None, target_package=None,
+    def LaunchDriverService(self,
+                            driver_type,
+                            service_name,
+                            bits,
+                            file_path=None,
+                            target_class=None,
+                            target_type=None,
+                            target_version=None,
+                            target_package=None,
                             target_component_name=None,
                             hw_binder_service_name=None):
         """RPC to LAUNCH_DRIVER_SERVICE."""
@@ -142,20 +177,29 @@ class VtsTcpClient(object):
         logging.info("file_path: %s", file_path)
         logging.info("bits: %s", bits)
         logging.info("driver_type: %s", driver_type)
-        self.SendCommand(SysMsg_pb2.LAUNCH_DRIVER_SERVICE,
-                         driver_type=driver_type,
-                         service_name=service_name,
-                         bits=bits,
-                         file_path=file_path,
-                         target_class=target_class,
-                         target_type=target_type,
-                         target_version=target_version,
-                         target_package=target_package,
-                         target_component_name=target_component_name,
-                         hw_binder_service_name=hw_binder_service_name)
+        self.SendCommand(
+            SysMsg_pb2.LAUNCH_DRIVER_SERVICE,
+            driver_type=driver_type,
+            service_name=service_name,
+            bits=bits,
+            file_path=file_path,
+            target_class=target_class,
+            target_type=target_type,
+            target_version=target_version,
+            target_package=target_package,
+            target_component_name=target_component_name,
+            hw_binder_service_name=hw_binder_service_name)
         resp = self.RecvResponse()
         logging.info("resp for LAUNCH_DRIVER_SERVICE: %s", resp)
-        return (resp.response_code == SysMsg_pb2.SUCCESS)
+        if driver_type == SysMsg_pb2.VTS_DRIVER_TYPE_HAL_HIDL \
+                or driver_type == SysMsg_pb2.VTS_DRIVER_TYPE_HAL_CONVENTIONAL \
+                or driver_type == SysMsg_pb2.VTS_DRIVER_TYPE_HAL_LEGACY:
+            if resp.response_code == SysMsg_pb2.SUCCESS:
+                return int(resp.result)
+            else:
+                return -1
+        else:
+            return (resp.response_code == SysMsg_pb2.SUCCESS)
 
     def ListApis(self):
         """RPC to LIST_APIS."""
@@ -183,30 +227,29 @@ class VtsTcpClient(object):
         if var_spec_msg.type == CompSpecMsg_pb2.TYPE_SCALAR:
             scalar_type = getattr(var_spec_msg, "scalar_type", "")
             if scalar_type:
-                return getattr(
-                    var_spec_msg.scalar_value, scalar_type)
+                return getattr(var_spec_msg.scalar_value, scalar_type)
         elif var_spec_msg.type == CompSpecMsg_pb2.TYPE_ENUM:
             scalar_type = getattr(var_spec_msg, "scalar_type", "")
             if scalar_type:
-                return getattr(
-                    var_spec_msg.scalar_value, scalar_type)
+                return getattr(var_spec_msg.scalar_value, scalar_type)
             else:
                 return var_spec_msg.scalar_value.int32_t
         elif var_spec_msg.type == CompSpecMsg_pb2.TYPE_STRING:
             if hasattr(var_spec_msg, "string_value"):
-                return getattr(
-                    var_spec_msg.string_value, "message", "")
+                return getattr(var_spec_msg.string_value, "message", "")
             raise errors.VtsMalformedProtoStringError()
         elif var_spec_msg.type == CompSpecMsg_pb2.TYPE_STRUCT:
             result = {}
             index = 1
             for struct_value in var_spec_msg.struct_value:
                 if len(struct_value.name) > 0:
-                    result[struct_value.name] = self.GetPythonDataOfVariableSpecMsg(
-                        struct_value)
+                    result[struct_value.
+                           name] = self.GetPythonDataOfVariableSpecMsg(
+                               struct_value)
                 else:
-                    result["attribute%d" % index] = self.GetPythonDataOfVariableSpecMsg(
-                        struct_value)
+                    result["attribute%d" %
+                           index] = self.GetPythonDataOfVariableSpecMsg(
+                               struct_value)
                 index += 1
             return result
         elif var_spec_msg.type == CompSpecMsg_pb2.TYPE_UNION:
@@ -214,26 +257,32 @@ class VtsTcpClient(object):
             index = 1
             for union_value in var_spec_msg.union_value:
                 if len(union_value.name) > 0:
-                    result[union_value.name] = self.GetPythonDataOfVariableSpecMsg(
-                        union_value)
+                    result[union_value.
+                           name] = self.GetPythonDataOfVariableSpecMsg(
+                               union_value)
                 else:
-                    result["attribute%d" % index] = self.GetPythonDataOfVariableSpecMsg(
-                        union_value)
+                    result["attribute%d" %
+                           index] = self.GetPythonDataOfVariableSpecMsg(
+                               union_value)
                 index += 1
             return result
         elif (var_spec_msg.type == CompSpecMsg_pb2.TYPE_VECTOR or
               var_spec_msg.type == CompSpecMsg_pb2.TYPE_ARRAY):
             result = []
             for vector_value in var_spec_msg.vector_value:
-                result.append(self.GetPythonDataOfVariableSpecMsg(vector_value))
+                result.append(
+                    self.GetPythonDataOfVariableSpecMsg(vector_value))
             return result
+        elif (var_spec_msg.type == CompSpecMsg_pb2.TYPE_HIDL_INTERFACE):
+            logging.debug("var_spec_msg: %s", var_spec_msg)
+            return var_spec_msg
 
-        raise errors.VtsUnsupportedTypeError(
-            "unsupported type %s" % var_spec_msg.type)
+        raise errors.VtsUnsupportedTypeError("unsupported type %s" %
+                                             var_spec_msg.type)
 
-    def CallApi(self, arg):
+    def CallApi(self, arg, caller_uid=None):
         """RPC to CALL_API."""
-        self.SendCommand(SysMsg_pb2.CALL_API, arg=arg)
+        self.SendCommand(SysMsg_pb2.CALL_API, arg=arg, caller_uid=caller_uid)
         resp = self.RecvResponse()
         resp_code = resp.response_code
         if (resp_code == SysMsg_pb2.SUCCESS):
@@ -250,7 +299,7 @@ class VtsTcpClient(object):
                 logging.info("returned a submodule spec")
                 logging.info("spec: %s", result.return_type_submodule_spec)
                 return mirror_object.MirrorObject(
-                     self, result.return_type_submodule_spec, None)
+                    self, result.return_type_submodule_spec, None)
 
             logging.info("result: %s", result.return_type_hidl)
             if len(result.return_type_hidl) == 1:
@@ -259,8 +308,8 @@ class VtsTcpClient(object):
             elif len(result.return_type_hidl) > 1:
                 result_value = []
                 for return_type_hidl in result.return_type_hidl:
-                    result_value.append(self.GetPythonDataOfVariableSpecMsg(
-                        return_type_hidl))
+                    result_value.append(
+                        self.GetPythonDataOfVariableSpecMsg(return_type_hidl))
             else:  # For non-HIDL return value
                 if hasattr(result, "return_type"):
                     result_value = result
@@ -295,9 +344,8 @@ class VtsTcpClient(object):
             if result.return_type.type == CompSpecMsg_pb2.TYPE_SUBMODULE:
                 logging.info("returned a submodule spec")
                 logging.info("spec: %s", result.return_type_submodule_spec)
-                return mirror_object.MirrorObject(self,
-                                           result.return_type_submodule_spec,
-                                           None)
+                return mirror_object.MirrorObject(
+                    self, result.return_type_submodule_spec, None)
             elif result.return_type.type == CompSpecMsg_pb2.TYPE_SCALAR:
                 return getattr(result.return_type.scalar_value,
                                result.return_type.scalar_type)
@@ -307,20 +355,69 @@ class VtsTcpClient(object):
         raise errors.VtsTcpCommunicationError(
             "RPC Error, response code for %s is %s" % (arg, resp_code))
 
-    def ExecuteShellCommand(self, command):
-        """RPC to VTS_AGENT_COMMAND_EXECUTE_SHELL_COMMAND."""
+    def ExecuteShellCommand(self, command, no_except=False):
+        """RPC to VTS_AGENT_COMMAND_EXECUTE_SHELL_COMMAND.
+
+        Args:
+            command: string or list of string, command to execute on device
+            no_except: bool, whether to throw exceptions. If set to True,
+                       when exception happens, return code will be -1 and
+                       str(err) will be in stderr. Result will maintain the
+                       same length as with input command.
+
+        Returns:
+            dictionary of list, command results that contains stdout,
+            stderr, and exit_code.
+        """
+        if not no_except:
+            return self.__ExecuteShellCommand(command)
+
+        try:
+            return self.__ExecuteShellCommand(command)
+        except Exception as e:
+            logging.exception(e)
+            return {
+                const.STDOUT: [""] * len(command),
+                const.STDERR: [str(e)] * len(command),
+                const.EXIT_CODE: [-1] * len(command)
+            }
+
+    def __ExecuteShellCommand(self, command):
+        """RPC to VTS_AGENT_COMMAND_EXECUTE_SHELL_COMMAND.
+
+        Args:
+            command: string or list of string, command to execute on device
+
+        Returns:
+            dictionary of list, command results that contains stdout,
+            stderr, and exit_code.
+        """
         self.SendCommand(
             SysMsg_pb2.VTS_AGENT_COMMAND_EXECUTE_SHELL_COMMAND,
             shell_command=command)
         resp = self.RecvResponse(retries=2)
-        logging.info("resp for VTS_AGENT_COMMAND_EXECUTE_SHELL_COMMAND: %s",
-                     resp)
-        if resp is not None and resp.response_code == SysMsg_pb2.SUCCESS:
-            return {const.STDOUT: resp.stdout,
-                    const.STDERR: resp.stderr,
-                    const.EXIT_CODE: resp.exit_code,
-                    }
-        return {}
+        logging.debug("resp for VTS_AGENT_COMMAND_EXECUTE_SHELL_COMMAND: %s",
+                      resp)
+
+        stdout = None
+        stderr = None
+        exit_code = None
+
+        if not resp:
+            logging.error("resp is: %s.", resp)
+        elif resp.response_code != SysMsg_pb2.SUCCESS:
+            logging.error("resp response code is not success: %s.",
+                          resp.response_code)
+        else:
+            stdout = resp.stdout
+            stderr = resp.stderr
+            exit_code = resp.exit_code
+
+        return {
+            const.STDOUT: stdout,
+            const.STDERR: stderr,
+            const.EXIT_CODE: exit_code
+        }
 
     def Ping(self):
         """RPC to send a PING request.
@@ -335,16 +432,31 @@ class VtsTcpClient(object):
             return True
         return False
 
-    def ReadSpecification(self, interface_name):
-        """RPC to VTS_AGENT_COMMAND_READ_SPECIFICATION."""
+    def ReadSpecification(self,
+                          interface_name,
+                          target_class,
+                          target_type,
+                          target_version,
+                          target_package,
+                          recursive=False):
+        """RPC to VTS_AGENT_COMMAND_READ_SPECIFICATION.
+
+        Args:
+            other args: see SendCommand
+            recursive: boolean, set to recursively read the imported
+                       specification(s) and return the merged one.
+        """
         self.SendCommand(
             SysMsg_pb2.VTS_AGENT_COMMAND_READ_SPECIFICATION,
-            service_name=interface_name)
+            service_name=interface_name,
+            target_class=target_class,
+            target_type=target_type,
+            target_version=target_version,
+            target_package=target_package)
         resp = self.RecvResponse(retries=2)
         logging.info("resp for VTS_AGENT_COMMAND_EXECUTE_READ_INTERFACE: %s",
                      resp)
-        logging.info("proto: %s",
-                     resp.result)
+        logging.info("proto: %s", resp.result)
         result = CompSpecMsg_pb2.ComponentSpecificationMessage()
         if resp.result == "error":
             raise errors.VtsTcpCommunicationError(
@@ -354,6 +466,23 @@ class VtsTcpClient(object):
         except text_format.ParseError as e:
             logging.exception(e)
             logging.error("Paring error\n%s", resp.result)
+
+        if recursive and hasattr(result, "import"):
+            for imported_interface in getattr(result, "import"):
+                if imported_interface == "android.hidl.base@1.0::types":
+                    logging.warn("import android.hidl.base@1.0::types skipped")
+                    continue
+                imported_result = self.ReadSpecification(
+                    imported_interface.split("::")[1],
+                    # TODO(yim): derive target_class and
+                    # target_type from package path or remove them
+                    msg.component_class
+                    if target_class is None else target_class,
+                    msg.component_type if target_type is None else target_type,
+                    float(imported_interface.split("@")[1].split("::")[0]),
+                    imported_interface.split("@")[0])
+                result.MergeFrom(imported_result)
+
         return result
 
     def SendCommand(self,
@@ -372,6 +501,7 @@ class VtsTcpClient(object):
                     callback_port=None,
                     driver_type=None,
                     shell_command=None,
+                    caller_uid=None,
                     arg=None):
         """Sends a command.
 
@@ -430,6 +560,9 @@ class VtsTcpClient(object):
         if callback_port is not None:
             command_msg.callback_port = callback_port
 
+        if caller_uid is not None:
+            command_msg.driver_caller_uid = caller_uid
+
         if arg is not None:
             command_msg.arg = arg
 
@@ -464,8 +597,8 @@ class VtsTcpClient(object):
                 data = self.channel.read(length)
                 response_msg = SysMsg_pb2.AndroidSystemControlResponseMessage()
                 response_msg.ParseFromString(data)
-                logging.debug("Response %s", "success"
-                              if response_msg.response_code == SysMsg_pb2.SUCCESS
+                logging.debug("Response %s", "success" if
+                              response_msg.response_code == SysMsg_pb2.SUCCESS
                               else "fail")
                 return response_msg
             except socket.timeout as e:

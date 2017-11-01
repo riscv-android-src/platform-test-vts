@@ -14,46 +14,18 @@
 # limitations under the License.
 
 vts_spec_file_list := \
-  test/vts/specification/hal_conventional/CameraHalV2.vts \
-  test/vts/specification/hal_conventional/CameraHalV2hw_device_t.vts \
-  test/vts/specification/hal_conventional/CameraHalV3.vts \
-  test/vts/specification/hal_conventional/CameraHalV3camera3_device_ops_t.vts \
-  test/vts/specification/hal_conventional/GpsHalV1.vts \
-  test/vts/specification/hal_conventional/GpsHalV1GpsInterface.vts \
-  test/vts/specification/hal_conventional/LightHalV1.vts \
-  test/vts/specification/hal_conventional/WifiHalV1.vts \
-  test/vts/specification/hal_conventional/BluetoothHalV1.vts \
-  test/vts/specification/hal_conventional/BluetoothHalV1bt_interface_t.vts \
-  test/vts/specification/lib_bionic/libmV1.vts \
-  test/vts/specification/lib_bionic/libcV1.vts \
-  test/vts/specification/lib_bionic/libcutilsV1.vts \
+  test/vts/specification/hal/conventional/bluetooth/1.0/BluetoothHalV1bt_interface_t.vts \
+  test/vts/specification/hal/conventional/bluetooth/1.0/BluetoothHalV1.vts \
+  test/vts/specification/hal/conventional/light/1.0/LightHalV1.vts \
+  test/vts/specification/hal/conventional/camera/3.4/CameraHalV3.vts \
+  test/vts/specification/hal/conventional/camera/3.4/CameraHalV3camera3_device_ops_t.vts \
+  test/vts/specification/hal/conventional/camera/2.1/CameraHalV2hw_device_t.vts \
+  test/vts/specification/hal/conventional/camera/2.1/CameraHalV2.vts \
+  test/vts/specification/hal/conventional/wifi/1.0/WifiHalV1.vts \
+  test/vts/specification/hal/conventional/gps/1.0/GpsHalV1GpsInterface.vts \
+  test/vts/specification/hal/conventional/gps/1.0/GpsHalV1.vts \
+  test/vts/specification/kernel/syscalls-arm64.vts \
+  test/vts/specification/lib/ndk/bionic/1.0/libmV1.vts \
+  test/vts/specification/lib/ndk/bionic/1.0/libcutilsV1.vts \
+  test/vts/specification/lib/ndk/bionic/1.0/libcV1.vts \
 
-ifeq (O,$(PLATFORM_VERSION))
-
-vts_spec_file_list += \
-  hardware/interfaces/tv/input/1.0/vts/TvInput.vts \
-  hardware/interfaces/tv/input/1.0/vts/TvInputCallback.vts \
-  hardware/interfaces/tv/input/1.0/vts/types.vts \
-  hardware/interfaces/graphics/allocator/2.0/vts/Allocator.vts \
-  hardware/interfaces/graphics/allocator/2.0/vts/AllocatorClient.vts \
-  hardware/interfaces/graphics/allocator/2.0/vts/types.vts \
-  hardware/interfaces/graphics/mapper/2.0/vts/Mapper.vts \
-  hardware/interfaces/graphics/mapper/2.0/vts/types.vts \
-  hardware/interfaces/nfc/1.0/vts/Nfc.vts \
-  hardware/interfaces/nfc/1.0/vts/NfcClientCallback.vts \
-  hardware/interfaces/nfc/1.0/vts/types.vts \
-  hardware/interfaces/vehicle/2.0/vts/Vehicle.vts \
-  hardware/interfaces/vehicle/2.0/vts/VehicleCallback.vts \
-  hardware/interfaces/vehicle/2.0/vts/types.vts \
-  hardware/interfaces/vibrator/1.0/vts/Vibrator.vts \
-  hardware/interfaces/vibrator/1.0/vts/types.vts \
-  hardware/interfaces/thermal/1.0/vts/Thermal.vts \
-  hardware/interfaces/thermal/1.0/vts/types.vts \
-  hardware/interfaces/sensors/1.0/vts/Sensors.vts \
-  hardware/interfaces/sensors/1.0/vts/types.vts \
-  hardware/interfaces/vr/1.0/vts/Vr.vts \
-  hardware/interfaces/tv/cec/1.0/vts/HdmiCec.vts \
-  hardware/interfaces/tv/cec/1.0/vts/HdmiCecCallback.vts \
-  hardware/interfaces/tv/cec/1.0/vts/types.vts \
-
-endif

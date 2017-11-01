@@ -15,5 +15,7 @@
 subdirs = [
      "drivers",
      "proto",
-     "sysfuzzer",
+     "compilation_tools",
+     "runners/target/vts_hal_hidl_target",
+     "utils",
 ]

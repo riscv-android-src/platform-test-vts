@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.4
+#!/usr/bin/env python
 #
 # Copyright (C) 2016 The Android Open Source Project
 #
@@ -18,13 +18,13 @@
 import logging
 
 from vts.runners.host import asserts
-from vts.runners.host import base_test_with_webdb
+from vts.runners.host import base_test
 from vts.runners.host import test_runner
 from vts.utils.python.controllers import android_device
 from vts.runners.host import const
 
 
-class SampleShellTest(base_test_with_webdb.BaseTestWithWebDbClass):
+class SampleShellTest(base_test.BaseTestClass):
     """A sample testcase for the shell driver."""
 
     REPEAT_COUNT = 10

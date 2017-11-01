@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.4
+#!/usr/bin/env python
 #
 # Copyright (C) 2016 The Android Open Source Project
 #
@@ -29,6 +29,9 @@ from vts.utils.python.coverage.parser_test import MockStream
 class GCDAParserTest(unittest.TestCase):
     """Tests for GCDA parser of vts.utils.python.coverage.
     """
+
+    GOLDEN_GCNO_PATH = 'testdata/sample.gcno'
+    GOLDEN_GCDA_PATH = 'testdata/sample.gcda'
 
     def setUp(self):
         """Creates a stream for each test.
@@ -119,12 +122,9 @@ class GCDAParserTest(unittest.TestCase):
 
         Verifies the block coverage counts for each function.
         """
-        gcno_path = os.path.join(
-            os.getenv('ANDROID_BUILD_TOP'),
-            'test/vts/utils/python/coverage/testdata/sample.gcno')
-        gcda_path = os.path.join(
-            os.getenv('ANDROID_BUILD_TOP'),
-            'test/vts/utils/python/coverage/testdata/sample.gcda')
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        gcno_path = os.path.join(dir_path, self.GOLDEN_GCNO_PATH)
+        gcda_path = os.path.join(dir_path, self.GOLDEN_GCDA_PATH)
         summary = gcno_parser.ParseGcnoFile(gcno_path)
         gcda_parser.ParseGcdaFile(gcda_path, summary)
         # Function: main

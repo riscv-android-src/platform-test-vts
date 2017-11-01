@@ -1,4 +1,3 @@
-#!/usr/bin/env python3.4
 #
 #   Copyright 2016- The Android Open Source Project
 #
@@ -64,12 +63,13 @@ class EventDispatcher:
             event_obj = None
             event_name = None
             try:
-                event_obj = self.droid.eventWait(50000)
+                event_obj = self.droid.eventWait(50000)  # unit: ms
             except:
                 if self.started:
                     print("Exception happened during polling.")
                     print(traceback.format_exc())
                     raise
+
             if not event_obj:
                 continue
             elif 'name' not in event_obj:

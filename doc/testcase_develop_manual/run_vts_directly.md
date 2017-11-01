@@ -2,35 +2,27 @@
 
 First of all, if you have not done [VTS setup](../setup/index.md), that is required here.
 
+## Download required Python packages to local host
+
+`$ . test/vts/script/pypi-packages-local.sh`
+
 ## Build Binaries
 
-`$ cd test/vts`
+`$ cd test/vts/script`
 
-`$ ./create-image-<your build target>.sh`
+`$ ./create-image.sh <build target>-userdebug`
 
-For angler_treble and bullhead, please run:
+or
 
-`$ ./create-image-angler_treble.sh`
-
-and
-
-`$ ./create-image-bullhead.sh`
-
-respectively.
+`$ ./create-image.sh aosp_salifish-userdebug`
 
 ## Copy Binaries
 
-`$ ./setup-<your build target>.sh`
+`$ ./setup-local.sh <device name>`
 
-For angler_treble and bullhead, please run:
+or
 
-`$ ./setup-angler_treble.sh`
-
-and
-
-`$ ./setup-bullhead.sh`
-
-respectively.
+`$ ./setup-local.sh sailfish`
 
 ## Run a test direclty
 
@@ -40,10 +32,12 @@ For example, for SampleShellTest, please run:
 
 `PYTHONPATH=$PYTHONPATH:.. python -m vts.testcases.host.shell.SampleShellTest $ANDROID_BUILD_TOP/test/vts/testcases/host/shell/SampleShellTest.config`
 
+More examples are in `test/vts/script/run-local.sh`.
+
 ## Additional Step for LTP and Linux-Kselftest
 
 Add `'data_file_path' : '<your android build top>/out/host/linux-x86/vts/android-vts/testcases'`
-to your config file (e.g., `KernelLtpStagingTest.config`).
+to your config file (e.g., `VtsKernelLtpStaging.config`).
 
 ## Add a new test
 
@@ -51,8 +45,8 @@ In order to add a new test, the following two files needed to be extended.
 
 `test/vts/create-image.sh`
 
-`test/vts/setup.sh`
+`test/vts/setup-local.sh`
 
 Optionally, the command used to add a new test can be also added to:
 
-`test/vts/run-angler.sh`
+`test/vts/run-local.sh`

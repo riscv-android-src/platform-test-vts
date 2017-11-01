@@ -1,4 +1,4 @@
-# Copyright (C) 2016 Google Inc.
+# Copyright (C) 2016 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,12 +21,18 @@ LOCAL_SRC_FILES += $(call all-java-files-under, ../../harnesses/tradefed/src)
 
 LOCAL_JAVA_RESOURCE_DIRS := res
 LOCAL_JAVA_RESOURCE_DIRS += ../../../../cts/common/host-side/tradefed/res
+LOCAL_JAVA_RESOURCE_DIRS += ../../../../cts/tools/cts-tradefed/res
 
 LOCAL_SUITE_BUILD_NUMBER := $(BUILD_NUMBER_FROM_FILE)
 LOCAL_SUITE_TARGET_ARCH := $(TARGET_ARCH)
 LOCAL_SUITE_NAME := VTS
 LOCAL_SUITE_FULLNAME := "Vendor Test Suite"
-LOCAL_SUITE_VERSION := 1.0
+LOCAL_SUITE_VERSION := 8.1
+LOCAL_STATIC_JAVA_LIBRARIES := \
+    libvts_protos_host \
+
+LOCAL_STATIC_JAVA_LIBRARIES += \
+    google-api-java-client-min-repackaged \
 
 LOCAL_JAR_MANIFEST := MANIFEST.mf
 

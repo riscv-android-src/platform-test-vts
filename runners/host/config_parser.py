@@ -1,4 +1,3 @@
-#!/usr/bin/env python3.4
 #
 # Copyright (C) 2016 The Android Open Source Project
 #
@@ -33,7 +32,7 @@ _DEFAULT_CONFIG_TEMPLATE = {
     },
     "log_path": "/tmp/logs",
     "test_paths": ["./"],
-    "use_gae_db": False,
+    "enable_web": False,
 }
 
 
@@ -43,25 +42,6 @@ def GetDefaultConfig(test_name):
     result[keys.ConfigKeys.KEY_TESTBED][
         keys.ConfigKeys.KEY_TESTBED_NAME] = test_name
     return result
-
-
-def gen_term_signal_handler(test_runners):
-    """Generates a termination signal handler function.
-
-    Args:
-        test_runners: A list of TestRunner objects.
-
-    Returns:
-        A function to be called when termination signals are received from
-        command line. This function stops all TestRunner objects.
-    """
-
-    def termination_sig_handler(signal_num, frame):
-        for t in test_runners:
-            t.stop()
-        sys.exit(1)
-
-    return termination_sig_handler
 
 
 def load_test_config_file(test_config_path,

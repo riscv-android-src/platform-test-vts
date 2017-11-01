@@ -17,27 +17,17 @@
 LOCAL_PATH := $(call my-dir)
 
 vtslib_interfacespec_srcfiles := \
-  hal_conventional/CameraHalV2.vts \
-  hal_conventional/CameraHalV2hw_device_t.vts \
-  hal_conventional/CameraHalV3.vts \
-  hal_conventional/CameraHalV3camera3_device_ops_t.vts \
-  hal_conventional/GpsHalV1.vts \
-  hal_conventional/GpsHalV1GpsInterface.vts \
-  hal_conventional/LightHalV1.vts \
-  hal_conventional/WifiHalV1.vts \
-  hal_conventional/BluetoothHalV1.vts \
-  hal_conventional/BluetoothHalV1bt_interface_t.vts \
-  lib_bionic/libmV1.vts \
-  lib_bionic/libcV1.vts \
-  lib_bionic/libcutilsV1.vts \
+  lib/ndk/bionic/1.0/libmV1.vts \
+  lib/ndk/bionic/1.0/libcV1.vts \
+  lib/ndk/bionic/1.0/libcutilsV1.vts \
 
 vtslib_interfacespec_includes := \
   $(LOCAL_PATH) \
-  test/vts/sysfuzzer \
-  test/vts/sysfuzzer/framework \
-  test/vts/sysfuzzer/libdatatype \
-  test/vts/sysfuzzer/libmeasurement \
-  test/vts/sysfuzzer/common \
+  test/vts/drivers/hal \
+  test/vts/drivers/hal/common \
+  test/vts/drivers/hal/framework \
+  test/vts/drivers/hal/libdatatype \
+  test/vts/drivers/hal/libmeasurement \
   bionic \
   libcore \
   device/google/gce/include \
@@ -60,6 +50,7 @@ vtslib_interfacespec_shared_libraries := \
   libprotobuf-cpp-full \
 
 vtslib_interfacespec_static_libraries := \
+  libbluetooth-types
 
 include $(CLEAR_VARS)
 
@@ -87,6 +78,17 @@ LOCAL_SHARED_LIBRARIES := \
 
 LOCAL_STATIC_LIBRARIES := \
   ${vtslib_interfacespec_static_libraries}
+
+LOCAL_CFLAGS := \
+  -Wall \
+  -Werror \
+
+# These warnings are in code generated with vtsc
+# b/31362043
+LOCAL_CFLAGS += \
+  -Wno-unused-parameter \
+  -Wno-unused-value \
+  -Wno-duplicate-decl-specifier \
 
 LOCAL_PROTOC_OPTIMIZE_TYPE := full
 

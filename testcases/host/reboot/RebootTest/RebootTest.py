@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.4
+#!/usr/bin/env python
 #
 # Copyright (C) 2016 The Android Open Source Project
 #
@@ -16,20 +16,20 @@
 #
 
 from vts.runners.host import asserts
-from vts.runners.host import base_test_with_webdb
+from vts.runners.host import base_test
 from vts.runners.host import test_runner
 from vts.runners.host import utils
-from vts.utils.python.controllers import android_device
 
 
-class RebootTest(base_test_with_webdb.BaseTestWithWebDbClass):
+class RebootTest(base_test.BaseTestClass):
     """Tests if device survives reboot.
 
     Attributes:
         dut: AndroidDevice, the device under test as config
     """
+
     def setUpClass(self):
-        self.dut = self.registerController(android_device)[0]
+        self.dut = self.android_devices[0]
 
     def testReboot(self):
         """Tests if device is still responsive after reboot."""

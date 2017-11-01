@@ -23,7 +23,10 @@ cc_library_shared {
         "VtsDriverFileUtil.cpp",
     ],
 
+    cflags: ["-Wall", "-Werror"],
+
     shared_libs: [
+        "libbase",
         "libcutils",
         "libprotobuf-cpp-full",
         "libvts_multidevice_proto",

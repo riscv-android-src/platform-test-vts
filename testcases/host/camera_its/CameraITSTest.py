@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.4
+#!/usr/bin/env python
 #
 # Copyright (C) 2016 The Android Open Source Project
 #
@@ -23,13 +23,12 @@ import subprocess
 import sys
 
 from vts.runners.host import asserts
-from vts.runners.host import base_test_with_webdb
+from vts.runners.host import base_test
 from vts.runners.host import const
 from vts.runners.host import test_runner
-from vts.utils.python.controllers import android_device
 
 
-class CameraITSTest(base_test_with_webdb.BaseTestWithWebDbClass):
+class CameraITSTest(base_test.BaseTestClass):
     """Running CameraITS tests in VTS"""
 
     # TODO: use config file to pass in:
@@ -39,20 +38,22 @@ class CameraITSTest(base_test_with_webdb.BaseTestWithWebDbClass):
     def setUpClass(self):
         """Setup ITS running python environment and check for required python modules
         """
-        self.dut = self.registerController(android_device)[0]
+        self.dut = self.android_devices[0]
         self.device_arg = "device=%s" % (self.dut.serial)
         # data_file_path is unicode so convert it to ascii
-        self.its_path = str(os.path.join(self.data_file_path, 'CameraITS'))
+        self.its_path = str(
+            os.path.abspath(os.path.join(self.data_file_path, 'CameraITS')))
+        logging.info("cwd: %s", os.getcwd())
+        logging.info("its_path: %s", self.its_path)
         self.out_path = logging.log_path
         os.environ["CAMERA_ITS_TOP"] = self.its_path
         # Below module check code assumes tradefed is running python 2.7
         # If tradefed switches to python3, then we will be checking modules in python3 while ITS
         # scripts should be ran in 2.7.
         if sys.version_info[:2] != (2, 7):
-            logging.warning(
-                "Python version %s found; "
-                "CameraITSTest only tested with Python 2.7." % (
-                    str(sys.version_info[:3])))
+            logging.warning("Python version %s found; "
+                            "CameraITSTest only tested with Python 2.7." %
+                            (str(sys.version_info[:3])))
         logging.info("===============================")
         logging.info("Python path is: %s" % (sys.executable))
         logging.info("PYTHONPATH env is: " + os.environ["PYTHONPATH"])
@@ -73,8 +74,10 @@ class CameraITSTest(base_test_with_webdb.BaseTestWithWebDbClass):
         from matplotlib import pylab
         logging.info("pylab path is " + inspect.getfile(pylab))
         logging.info("===============================")
-        modules = ["numpy", "PIL", "Image", "matplotlib", "pylab",
-                   "scipy.stats", "scipy.spatial"]
+        modules = [
+            "numpy", "PIL", "Image", "matplotlib", "pylab", "scipy.stats",
+            "scipy.spatial"
+        ]
         for m in modules:
             try:
                 if m == "Image":
@@ -85,14 +88,16 @@ class CameraITSTest(base_test_with_webdb.BaseTestWithWebDbClass):
                 else:
                     exec ("import " + m)
             except ImportError as e:
-                asserts.fail("Cannot import python module %s: %s" % (m, str(e)))
+                asserts.fail("Cannot import python module %s: %s" % (m,
+                                                                     str(e)))
 
         # Add ITS module path to path
-        its_path = "%s/pymodules" % (self.its_path)
+        its_path = os.path.join(self.its_path, "pymodules")
         env_python_path = os.environ["PYTHONPATH"]
         self.pythonpath = env_python_path if its_path in env_python_path else \
                 "%s:%s" % (its_path, env_python_path)
         os.environ["PYTHONPATH"] = self.pythonpath
+        logging.info("new PYTHONPATH: %s", self.pythonpath)
 
     def RunTestcase(self, testpath):
         """Runs the given testcase and asserts the result.
@@ -101,11 +106,16 @@ class CameraITSTest(base_test_with_webdb.BaseTestWithWebDbClass):
             testpath: string, format tests/[scenename]/[testname].py
         """
         testname = re.split("/|\.", testpath)[-2]
-        cmd = ['python', os.path.join(self.its_path, testpath),
-               self.device_arg]
+        cmd = [
+            'python', os.path.join(self.its_path, testpath), self.device_arg
+        ]
         outdir = self.out_path
         outpath = os.path.join(outdir, testname + "_stdout.txt")
         errpath = os.path.join(outdir, testname + "_stderr.txt")
+        logging.info("cwd: %s", os.getcwd())
+        logging.info("cmd: %s", cmd)
+        logging.info("outpath: %s", outpath)
+        logging.info("errpath: %s", errpath)
         with open(outpath, "w") as fout, open(errpath, "w") as ferr:
             retcode = subprocess.call(
                 cmd, stderr=ferr, stdout=fout, cwd=outdir)
@@ -125,9 +135,11 @@ class CameraITSTest(base_test_with_webdb.BaseTestWithWebDbClass):
             scnee: one of ITS test scene name.
         """
         its_path = self.its_path
-        paths = [os.path.join("tests", scene, s)
-                 for s in os.listdir(os.path.join(its_path, "tests", scene))
-                 if s[-3:] == ".py" and s[:4] == "test"]
+        paths = [
+            os.path.join("tests", scene, s)
+            for s in os.listdir(os.path.join(its_path, "tests", scene))
+            if s[-3:] == ".py" and s[:4] == "test"
+        ]
         paths.sort()
         return paths
 

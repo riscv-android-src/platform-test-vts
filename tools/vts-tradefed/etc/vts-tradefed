@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (C) 2016 Google Inc.
+# Copyright (C) 2016 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,10 +35,18 @@ checkPath adb
 checkPath java
 
 # check java version
-JAVA_VERSION=$(java -version 2>&1 | head -n 2 | grep '[ "]1\.[678][\. "$$]')
-if [ "${JAVA_VERSION}" == "" ]; then
-    echo "Wrong java version. 1.6, 1.7 or 1.8 is required."
-    exit
+if [ "${EXPERIMENTAL_USE_OPENJDK9}" == "" ]; then
+    JAVA_VERSION=$(java -version 2>&1 | head -n 2 | grep '[ "]1\.[678][\. "$$]')
+    if [ "${JAVA_VERSION}" == "" ]; then
+        echo "Wrong java version. 1.6, 1.7 or 1.8 is required."
+        exit
+    fi
+else
+    JAVA_VERSION=$(java -version 2>&1 | head -n 2 | grep '^java .* "9.*')
+    if [ "${JAVA_VERSION}" == "" ]; then
+        echo "Wrong java version. Version 9 is required."
+        exit
+    fi
 fi
 
 # check debug flag and set up remote debugging
@@ -75,14 +83,20 @@ fi;
 
 if [ -z ${VTS_ROOT} ]; then
     # assume we're in an extracted vts install
-    VTS_ROOT="$(dirname $0)/../.."
+    VTS_ROOT="$(dirname $(readlink -e $0))/../.."
 fi;
 
 JAR_DIR=${VTS_ROOT}/android-vts/tools
-JARS="tradefed-prebuilt
+
+TRADEFED_JAR="tradefed"
+if [ ! -f ${JAR_DIR}/${TRADEFED_JAR}.jar ]; then
+  TRADEFED_JAR="tradefed-prebuilt"
+fi;
+
+JARS="${TRADEFED_JAR}
   hosttestlib
-  compatibility-host-util
-  vts-tradefed"
+  vts-tradefed
+  compatibility-host-util"
 
 for JAR in $JARS; do
     checkFile ${JAR_DIR}/${JAR}.jar
@@ -100,8 +114,6 @@ for JAR in $OPTIONAL_JARS; do
     if [ -f "${VTS_ROOT}/${JAR}.jar" ]; then
         echo "Including optional JAR: $VTS_ROOT/$JAR.jar"
         JAR_PATH=${JAR_PATH}:${VTS_ROOT}/${JAR}.jar
-    else
-        echo "Optional JAR not found: $VTS_ROOT/$JAR.jar"
     fi;
 done
 
