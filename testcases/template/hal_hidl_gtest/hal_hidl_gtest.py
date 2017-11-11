@@ -72,6 +72,8 @@ class HidlHalGTest(gtest_binary_test.GtestBinaryTest):
         if self.sancov.enabled and self._hal_precondition is not None:
             self.sancov.InitializeDeviceCoverage(self._dut,
                                                  self._hal_precondition)
+        if self.coverage.enabled and self._hal_precondition is not None:
+            self.coverage.SetHalNames([self._hal_precondition])
 
     def CreateTestCases(self):
         """Create testcases and conditionally enable passthrough mode.
@@ -85,9 +87,8 @@ class HidlHalGTest(gtest_binary_test.GtestBinaryTest):
         passthrough_opt = self.getUserParam(
             keys.ConfigKeys.IKEY_PASSTHROUGH_MODE, default_value=False)
 
-        # Enable coverage if specified in the configuration or coverage enabled.
-        # TODO(ryanjcampbell@) support binderized mode
-        if passthrough_opt or self.coverage.enabled:
+        # Enable coverage if specified in the configuration.
+        if passthrough_opt:
             self._EnablePassthroughMode()
 
     # @Override
@@ -133,19 +134,13 @@ class HidlHalGTest(gtest_binary_test.GtestBinaryTest):
         # find the correponding service name(s) for each registered service and
         # store the mapping in dict service_instances.
         service_instances = {}
-        framework_comp_matrix_xml = self._dut.getCompMatrixXml()
-        framework_vintf_xml = self._dut.getVintfXml(
-            use_lshal=False, is_framework_manifest=True)
         for service in registered_services:
-            # TODO(zhuoyao): add support to get service names for optional instances.
-            service_names = set(
-                hal_service_name_utils.GetServiceNamesFromCompMatrix(
-                    framework_comp_matrix_xml, service))
-            service_names |= set(
-                hal_service_name_utils.GetServiceNamesFromVintf(
-                    framework_vintf_xml, service))
+            _, service_names = hal_service_name_utils.GetHalServiceName(
+                self.shell, service, self.abi_bitness,
+                self.run_as_compliance_test)
             if not service_names:
-                logging.error("No service name found for: %s, skip all tests.", service)
+                logging.error("No service name found for: %s, skip all tests.",
+                              service)
                 self._skip_all_testcases = True
                 # If any of the test services are not available, return the
                 # initial test cases directly.
@@ -168,7 +163,6 @@ class HidlHalGTest(gtest_binary_test.GtestBinaryTest):
                         '/'):] + new_test_case.tag
                 new_test_cases.append(new_test_case)
         return new_test_cases
-
 
     def _EnablePassthroughMode(self):
         """Enable passthrough mode by setting getStub to true.

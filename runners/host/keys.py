@@ -25,6 +25,7 @@ class ConfigKeys(object):
     # These keys define the wording of test configs and their internal
     # references.
     KEY_LOG_PATH = "log_path"
+    KEY_LOG_SEVERITY = "log_severity"
     KEY_TESTBED = "test_bed"
     KEY_TESTBED_NAME = "name"
     KEY_TEST_PATHS = "test_paths"
@@ -101,6 +102,7 @@ class ConfigKeys(object):
     IKEY_OUTPUT_COVERAGE_REPORT = "output_coverage_report"
     IKEY_GLOBAL_COVERAGE = "global_coverage"
     IKEY_SANCOV_RESOURCES_PATH = "sancov_resources_path"
+    IKEY_GCOV_RESOURCES_PATH = "gcov_resources_path"
 
     # Keys for the HAL HIDL GTest type (see VtsMultiDeviceTest.java).
     IKEY_PRECONDITION_HWBINDER_SERVICE = "precondition_hwbinder_service"
@@ -131,3 +133,6 @@ class ConfigKeys(object):
 
     # Vts self test related keys
     RUN_AS_VTS_SELFTEST = "run_as_vts_self_test"
+
+    # Vts compliance test related keys
+    RUN_AS_COMPLIANCE_TEST = "run_as_compliance_test"

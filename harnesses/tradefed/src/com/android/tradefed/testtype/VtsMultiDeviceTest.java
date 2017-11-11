@@ -26,7 +26,7 @@ import com.android.tradefed.device.ITestDevice;
 import com.android.tradefed.log.LogUtil.CLog;
 import com.android.ddmlib.Log.LogLevel;
 import com.android.tradefed.result.ITestInvocationListener;
-import com.android.tradefed.targetprep.VtsSancovPreparer;
+import com.android.tradefed.targetprep.VtsCoveragePreparer;
 import com.android.tradefed.util.ArrayUtil;
 import com.android.tradefed.util.CommandResult;
 import com.android.tradefed.util.CommandStatus;
@@ -54,10 +54,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
 import java.nio.file.Paths;
+import java.util.Map;
 import java.util.TreeSet;
 import java.util.Set;
 import java.util.Collection;
 import java.util.ArrayList;
+import java.util.Arrays;
 
 /**
  * A Test that runs a vts multi device test package (part of Vendor Test Suite,
@@ -75,6 +77,7 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     static final String COVERAGE_PROPERTY = "ro.vts.coverage";
     static final String DATA_FILE_PATH = "data_file_path";
     static final String LOG_PATH = "log_path";
+    static final String LOG_SEVERITY = "log_severity";
     static final String NAME = "name";
     static final String OS_NAME = "os.name";
     static final String WINDOWS = "Windows";
@@ -131,6 +134,7 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     static final String HAL_HIDL_PACKAGE_NAME = "hal_hidl_package_name";
     static final String REPORT_MESSAGE_FILE_NAME = "report_proto.msg";
     static final String RUN_AS_VTS_SELF_TEST = "run_as_vts_self_test";
+    static final String RUN_AS_COMPLIANCE_TEST = "run_as_compliance_test";
     static final String SYSTRACE_PROCESS_NAME = "systrace_process_name";
     static final String TEMPLATE_BINARY_TEST_PATH = "vts/testcases/template/binary_test/binary_test";
     static final String TEMPLATE_GTEST_BINARY_TEST_PATH = "vts/testcases/template/gtest_binary_test/gtest_binary_test";
@@ -200,12 +204,6 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
                     + "needed to run the test (e.g., android.hardware.graphics.mapper@2.0). "
                     + "this can override precondition-lshal option.")
     private String mPreconditionVintf = null;
-
-    @Option(name = "precondition-vintf-override",
-            description = "If precondition-lshal is present and precondition-vintf is not, "
-                    + "set precondition-vintf to the value of precondition-lshal. "
-                    + "The test runner will find the HAL in manifest.xml instead of lshal.")
-    private boolean mPreconditionVintfOverride = false;
 
     @Option(name = "use-stdout-logs",
             description = "Flag that determines whether to use std:out to parse output.")
@@ -394,6 +392,9 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
 
     @Option(name = "gtest-batch-mode", description = "Run Gtest binaries in batch mode.")
     private boolean mGtestBatchMode = false;
+
+    @Option(name = "log-severity", description = "Set the log severity level.")
+    private String mLogSeverity = "INFO";
 
     // This variable is set in order to include the directory that contains the
     // python test cases. This is set before calling the method.
@@ -641,21 +642,28 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
         JSONArray deviceArray = new JSONArray();
         JSONObject deviceItemObject = new JSONObject();
         deviceItemObject.put(SERIAL, mDevice.getSerialNumber());
+
         boolean coverageBuild = false;
         boolean sancovBuild = false;
+
         try {
             deviceItemObject.put("product_type", mDevice.getProductType());
             deviceItemObject.put("product_variant", mDevice.getProductVariant());
             deviceItemObject.put("build_alias", mDevice.getBuildAlias());
             deviceItemObject.put("build_id", mDevice.getBuildId());
             deviceItemObject.put("build_flavor", mDevice.getBuildFlavor());
-            File sancovDir = mBuildInfo.getFile(VtsSancovPreparer.getSancovResourceDirKey(mDevice));
+
+            File sancovDir =
+                    mBuildInfo.getFile(VtsCoveragePreparer.getSancovResourceDirKey(mDevice));
             if (sancovDir != null) {
                 deviceItemObject.put("sancov_resources_path", sancovDir.getAbsolutePath());
                 sancovBuild = true;
             }
-            String coverageProperty = mDevice.getProperty(COVERAGE_PROPERTY);
-            coverageBuild = coverageProperty != null && coverageProperty.equals("1");
+            File gcovDir = mBuildInfo.getFile(VtsCoveragePreparer.getGcovResourceDirKey(mDevice));
+            if (gcovDir != null) {
+                deviceItemObject.put("gcov_resources_path", gcovDir.getAbsolutePath());
+                coverageBuild = true;
+            }
         } catch (DeviceNotAvailableException e) {
             CLog.e("A device not available - continuing");
             throw new RuntimeException("Failed to get device information");
@@ -732,6 +740,19 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
 
         jsonObject.put(TEST_MAX_TIMEOUT, mTestTimeout);
         CLog.i("Added %s to the Json object: %d", TEST_MAX_TIMEOUT, mTestTimeout);
+
+        if (!mLogSeverity.isEmpty()) {
+            String logSeverity = mLogSeverity.toUpperCase();
+            ArrayList<String> severityList =
+                    new ArrayList<String>(Arrays.asList("ERROR", "WARNING", "INFO", "DEBUG"));
+            if (!severityList.contains(logSeverity)) {
+                CLog.w("Unsupported log severity %s, use default log_severity:INFO instead.",
+                        logSeverity);
+                logSeverity = "INFO";
+            }
+            jsonObject.put(LOG_SEVERITY, logSeverity);
+            CLog.i("Added %s to the Json object: %s", LOG_SEVERITY, logSeverity);
+        }
 
         if (mAbi != null) {
             jsonObject.put(ABI_NAME, mAbi.getName());
@@ -855,16 +876,6 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
             CLog.i("Added %s to the Json object", PRECONDITION_VINTF);
         }
 
-        if (mPreconditionVintfOverride && mPreconditionLshal != null) {
-            if (mPreconditionVintf == null) {
-                jsonObject.put(PRECONDITION_VINTF, mPreconditionLshal);
-                CLog.i("Added %s to the Json object, overriding %s", PRECONDITION_VINTF,
-                        PRECONDITION_LSHAL);
-            } else {
-                CLog.w("Ignored precondition-vintf-override as precondition-vintf is present");
-            }
-        }
-
         if (!mBinaryTestProfilingLibraryPath.isEmpty()) {
             jsonObject.put(BINARY_TEST_PROFILING_LIBRARY_PATH,
                     new JSONArray(mBinaryTestProfilingLibraryPath));
@@ -920,6 +931,11 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
         if (mRunAsVtsSelfTest) {
             jsonObject.put(RUN_AS_VTS_SELF_TEST, mRunAsVtsSelfTest);
             CLog.i("Added %s to the Json object", RUN_AS_VTS_SELF_TEST);
+        }
+
+        if ("vts".equals(mBuildInfo.getTestTag())) {
+            jsonObject.put(RUN_AS_COMPLIANCE_TEST, true);
+            CLog.i("Added %s to the Json object", RUN_AS_COMPLIANCE_TEST);
         }
     }
 
