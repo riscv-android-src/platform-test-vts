@@ -13,14 +13,13 @@
      See the License for the specific language governing permissions and
      limitations under the License.
 -->
-<configuration description="VTS Library Test Plan">
+<configuration description="VTS Serving Plan for a Pinned Build">
   <include name="vts-base" />
   <option name="plan" value="vts" />
   <option name="test-tag" value="vts-star" />
 
-  <!-- For NDK -->
-  <option name="compatibility:include-filter" value="BionicUnitTests" />
-  <option name="compatibility:include-filter" value="BionicUnitTestsGcc" />
-  <option name="compatibility:include-filter" value="BionicUnitTestsStatic" />
+  <!-- For vts-kernel -->
+  <option name="compatibility:include-filter" value="VtsKernelLtp" />
+  <option name="compatibility:include-filter" value="VtsKernelLinuxKselftestPresubmit" />
 
 </configuration>

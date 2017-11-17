@@ -13,14 +13,13 @@
      See the License for the specific language governing permissions and
      limitations under the License.
 -->
-<configuration description="VTS Library Test Plan">
+<configuration description="VTS Serving Plan for System (Staging)">
   <include name="vts-base" />
   <option name="plan" value="vts" />
   <option name="test-tag" value="vts-star" />
 
-  <!-- For NDK -->
-  <option name="compatibility:include-filter" value="BionicUnitTests" />
-  <option name="compatibility:include-filter" value="BionicUnitTestsGcc" />
-  <option name="compatibility:include-filter" value="BionicUnitTestsStatic" />
+  <option name="compatibility:include-filter" value="CameraITSTest" />
+  <option name="compatibility:include-filter" value="MemorySystemStressTest" />
+  <option name="compatibility:include-filter" value="VtsAppCameraStressTest" />
 
 </configuration>

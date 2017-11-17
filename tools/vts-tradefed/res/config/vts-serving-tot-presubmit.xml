@@ -13,14 +13,20 @@
      See the License for the specific language governing permissions and
      limitations under the License.
 -->
-<configuration description="VTS Library Test Plan">
+<configuration description="VTS Serving Plan for Presubmit Testing (Tip-of-Tree)">
   <include name="vts-base" />
+  <option name="compatibility:primary-abi-only" value="true" />
   <option name="plan" value="vts" />
   <option name="test-tag" value="vts-star" />
 
-  <!-- For NDK -->
-  <option name="compatibility:include-filter" value="BionicUnitTests" />
-  <option name="compatibility:include-filter" value="BionicUnitTestsGcc" />
-  <option name="compatibility:include-filter" value="BionicUnitTestsStatic" />
+  <!-- For vts-hal-conventional -->
+  <option name="compatibility:include-filter" value="SampleLightTest" />
+
+  <!-- For vts-system -->
+  <option name="compatibility:include-filter" value="SampleShellTest" />
+  <option name="compatibility:include-filter" value="ShellBinaryCrashTest" />
+  <option name="compatibility:include-filter" value="SampleQtaguidTest" />
+  <option name="compatibility:include-filter" value="LibcTest" />
+  <option name="compatibility:include-filter" value="SyscallExistenceTest" />
 
 </configuration>

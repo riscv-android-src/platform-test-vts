@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright (C) 2016 Google Inc.
+<!-- Copyright (C) 2017 Google Inc.
 
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
@@ -13,14 +13,14 @@
      See the License for the specific language governing permissions and
      limitations under the License.
 -->
-<configuration description="VTS Library Test Plan">
+<configuration description="VTS Serving Plan for HIDL HAL Systracing (Staging)">
   <include name="vts-base" />
   <option name="plan" value="vts" />
   <option name="test-tag" value="vts-star" />
 
-  <!-- For NDK -->
-  <option name="compatibility:include-filter" value="BionicUnitTests" />
-  <option name="compatibility:include-filter" value="BionicUnitTestsGcc" />
-  <option name="compatibility:include-filter" value="BionicUnitTestsStatic" />
+  <option name="compatibility:include-filter" value="HwBinderBinderizeThroughputSystraceTest" />
+  <option name="compatibility:include-filter" value="HwBinderPassthroughThroughputSystraceTest" />
+  <option name="compatibility:include-filter" value="HwBinderBinderizePerformanceSystraceTest" />
+  <option name="compatibility:include-filter" value="HwBinderPassthroughPerformanceSystraceTest" />
 
 </configuration>
