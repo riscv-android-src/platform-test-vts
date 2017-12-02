@@ -40,6 +40,7 @@ TEST_CASE_TOKEN = "[Test Case]"
 RESULT_LINE_TEMPLATE = TEST_CASE_TOKEN + " %s %s"
 STR_TEST = "test"
 STR_GENERATE = "generate"
+_REPORT_MESSAGE_FILE_NAME = "report_proto.msg"
 
 
 class BaseTestClass(object):
@@ -110,12 +111,16 @@ class BaseTestClass(object):
 
         # TODO: get abi information differently for multi-device support.
         # Set other optional parameters
-        opt_param_names = [keys.ConfigKeys.IKEY_ABI_NAME,
-                           keys.ConfigKeys.IKEY_ABI_BITNESS,
-                           keys.ConfigKeys.IKEY_SKIP_ON_32BIT_ABI,
-                           keys.ConfigKeys.IKEY_SKIP_ON_64BIT_ABI,
-                           keys.ConfigKeys.IKEY_RUN_32BIT_ON_64BIT_ABI]
-        self.getUserParams(opt_param_names=opt_param_names)
+        self.abi_name = self.getUserParam(
+            keys.ConfigKeys.IKEY_ABI_NAME, default_value=None)
+        self.abi_bitness = self.getUserParam(
+            keys.ConfigKeys.IKEY_ABI_BITNESS, default_value=None)
+        self.skip_on_32bit_abi = self.getUserParam(
+            keys.ConfigKeys.IKEY_SKIP_ON_32BIT_ABI, default_value=False)
+        self.skip_on_64bit_abi = self.getUserParam(
+            keys.ConfigKeys.IKEY_SKIP_ON_64BIT_ABI, default_value=False)
+        self.run_32bit_on_64bit_abi = self.getUserParam(
+            keys.ConfigKeys.IKEY_RUN_32BIT_ON_64BIT_ABI, default_value=False)
         self.web = web_utils.WebFeature(self.user_params)
         self.coverage = coverage_utils.CoverageFeature(
             self.user_params, web=self.web)
@@ -125,6 +130,8 @@ class BaseTestClass(object):
             self.user_params, web=self.web)
         self.log_uploading = log_uploading_utils.LogUploadingFeature(
             self.user_params, web=self.web)
+        self.run_as_vts_self_test = self.getUserParam(
+            keys.ConfigKeys.RUN_AS_VTS_SELFTEST, default_value=False)
         self._skip_all_testcases = False
 
     @property
@@ -180,7 +187,8 @@ class BaseTestClass(object):
                      param_name,
                      error_if_not_found=False,
                      log_warning_and_continue_if_not_found=False,
-                     default_value=None):
+                     default_value=None,
+                     to_str=False):
         """Get the value of a single user parameter.
 
         This method returns the value of specified user parameter.
@@ -198,16 +206,25 @@ class BaseTestClass(object):
                                                    not found.
             default_value: object, default value to return if not found. If error_if_not_found is
                            True, this parameter has no effect. Default: None
+            to_str: boolean, whether to convert the result object to string if not None.
+                    Note, strings passing in from java json config are usually unicode.
 
         Returns:
             object, value of the specified parameter name chain if exists;
             <default_value> if not exists.
         """
+
+        def ToStr(return_value):
+            """Check to_str option and convert to string if not None"""
+            if to_str and return_value is not None:
+                return str(return_value)
+            return return_value
+
         if not param_name:
             if error_if_not_found:
                 raise errors.BaseTestError("empty param_name provided")
             logging.error("empty param_name")
-            return default_value
+            return ToStr(default_value)
 
         if not isinstance(param_name, list):
             param_name = [param_name]
@@ -220,10 +237,10 @@ class BaseTestClass(object):
                     raise errors.BaseTestError(msg)
                 elif log_warning_and_continue_if_not_found:
                     logging.warn(msg)
-                return default_value
+                return ToStr(default_value)
             curr_obj = curr_obj[param]
 
-        return curr_obj
+        return ToStr(curr_obj)
 
     def _setUpClass(self):
         """Proxy function to guarantee the base implementation of setUpClass
@@ -251,7 +268,20 @@ class BaseTestClass(object):
         if self.log_uploading.enabled:
             self.log_uploading.UploadLogs()
         if self.web.enabled:
-            self.web.Upload(self.results.requested, self.results.executed)
+            message_b = self.web.GenerateReportMessage(self.results.requested,
+                                                       self.results.executed)
+        else:
+            message_b = ''
+
+        report_proto_path = os.path.join(logging.log_path,
+                                         _REPORT_MESSAGE_FILE_NAME)
+
+        if message_b:
+            logging.info('Result proto message path: %s', report_proto_path)
+
+        with open(report_proto_path, "wb") as f:
+            f.write(message_b)
+
         return ret
 
     def tearDownClass(self):
@@ -525,25 +555,16 @@ class BaseTestClass(object):
         if self._skip_all_testcases:
             raise signals.TestSkip("All test cases skipped.")
 
-        if hasattr(self, keys.ConfigKeys.IKEY_ABI_BITNESS):
-            bitness = getattr(self, keys.ConfigKeys.IKEY_ABI_BITNESS)
-            run_32bit_on_64bit_abi = getattr(
-                self, keys.ConfigKeys.IKEY_RUN_32BIT_ON_64BIT_ABI, False)
-
-            skip_on_32bit_abi = getattr(
-                self, keys.ConfigKeys.IKEY_SKIP_ON_32BIT_ABI, False)
-            skip_on_64bit_abi = getattr(
-                self, keys.ConfigKeys.IKEY_SKIP_ON_64BIT_ABI, False)
-
-            asserts.skipIf(
-                ((skip_on_32bit_abi is True) and bitness == "32") or (
-                    (skip_on_64bit_abi is True) and bitness == "64") or
-                (test_name.lower().endswith(const.SUFFIX_32BIT) and
-                 bitness != "32") or (
-                     test_name.lower().endswith(const.SUFFIX_64BIT) and
-                     bitness != "64" and not run_32bit_on_64bit_abi),
-                "Test case '{}' excluded as ABI bitness is {}.".format(
-                    test_name, bitness))
+        asserts.skipIf(
+            self.abi_bitness and
+            ((self.skip_on_32bit_abi is True) and self.abi_bitness == "32") or
+            ((self.skip_on_64bit_abi is True) and self.abi_bitness == "64") or
+            (test_name.lower().endswith(const.SUFFIX_32BIT) and
+             self.abi_bitness != "32") or
+            (test_name.lower().endswith(const.SUFFIX_64BIT) and
+             self.abi_bitness != "64" and not self.run_32bit_on_64bit_abi),
+            "Test case '{}' excluded as ABI bitness is {}.".format(
+                test_name, self.abi_bitness))
 
     def execOneTest(self, test_name, test_func, args, **kwargs):
         """Executes one test case and update test results.
@@ -563,6 +584,7 @@ class BaseTestClass(object):
         tr_record.testBegin()
         logging.info("%s %s", TEST_CASE_TOKEN, test_name)
         verdict = None
+        finished = False
         try:
             ret = self._testEntry(test_name)
             asserts.assertTrue(ret is not False,
@@ -577,34 +599,41 @@ class BaseTestClass(object):
                     verdict = test_func(*args, **kwargs)
                 else:
                     verdict = test_func()
+                finished = True
             finally:
                 self._tearDown(test_name)
         except (signals.TestFailure, AssertionError) as e:
             tr_record.testFail(e)
             self._exec_procedure_func(self._onFail, tr_record)
+            finished = True
         except signals.TestSkip as e:
             # Test skipped.
             tr_record.testSkip(e)
             self._exec_procedure_func(self._onSkip, tr_record)
+            finished = True
         except (signals.TestAbortClass, signals.TestAbortAll) as e:
             # Abort signals, pass along.
             tr_record.testFail(e)
+            finished = True
             raise e
         except signals.TestPass as e:
             # Explicit test pass.
             tr_record.testPass(e)
             self._exec_procedure_func(self._onPass, tr_record)
+            finished = True
         except signals.TestSilent as e:
             # Suppress test reporting.
             is_silenced = True
             self._exec_procedure_func(self._onSilent, tr_record)
-            self.results.requested.remove(test_name)
+            self.results.removeRecord(tr_record)
+            finished = True
         except Exception as e:
             # Exception happened during test.
             logging.exception(e)
             tr_record.testError(e)
             self._exec_procedure_func(self._onException, tr_record)
             self._exec_procedure_func(self._onFail, tr_record)
+            finished = True
         else:
             # Keep supporting return False for now.
             # TODO(angli): Deprecate return False support.
@@ -617,7 +646,17 @@ class BaseTestClass(object):
             # This should be removed eventually.
             tr_record.testFail()
             self._exec_procedure_func(self._onFail, tr_record)
+            finished = True
         finally:
+            if not finished:
+                for device in self.android_devices:
+                    device.shell.enabled = False
+
+                logging.error('Test timed out.')
+                tr_record.testError()
+                self._exec_procedure_func(self._onException)
+                self._exec_procedure_func(self._onFail)
+
             if not is_silenced:
                 self.results.addRecord(tr_record)
             self._testExit(test_name)
@@ -666,7 +705,8 @@ class BaseTestClass(object):
                     logging.exception(("Failed to get test name from "
                                        "test_func. Fall back to default %s"),
                                       test_name)
-            self.results.requested.append(test_name)
+            tr_record = records.TestResultRecord(test_name, self.TAG)
+            self.results.requested.append(tr_record)
             if len(test_name) > utils.MAX_FILENAME_LEN:
                 test_name = test_name[:utils.MAX_FILENAME_LEN]
             previous_success_cnt = len(self.results.passed)
@@ -772,9 +812,14 @@ class BaseTestClass(object):
             else:
                 # No test case specified by user, execute all in the test class
                 test_names = self._get_all_test_names()
-        self.results.requested = [test_name for test_name in test_names
-                                  if test_name.startswith(STR_TEST)]
+
+        if not self.run_as_vts_self_test:
+            self.results.requested = [
+                records.TestResultRecord(test_name, self.TAG)
+                for test_name in test_names if test_name.startswith(STR_TEST)
+            ]
         tests = self._get_test_funcs(test_names)
+
         # Setup for the class.
         try:
             if self._setUpClass() is False:
@@ -786,6 +831,12 @@ class BaseTestClass(object):
             return self.results
         # Run tests in order.
         try:
+            # Check if module is running in self test mode.
+            if self.run_as_vts_self_test:
+                logging.info('setUpClass function was executed successfully.')
+                self.results.passClass(self.TAG)
+                return self.results
+
             for test_name, test_func in tests:
                 if test_name.startswith(STR_GENERATE):
                     logging.info(

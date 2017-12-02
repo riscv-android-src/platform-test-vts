@@ -21,6 +21,7 @@ import pprint
 
 from vts.runners.host import signals
 from vts.runners.host import utils
+from vts.utils.python.common import list_utils
 
 
 class TestResultEnums(object):
@@ -195,8 +196,7 @@ class TestResult(object):
     This class is essentially a container of TestResultRecord objects.
 
     Attributes:
-        self.requested: A list of strings, each is the name of a test requested
-            by user.
+        self.requested: A list of records for tests requested by user.
         self.failed: A list of records for tests failed.
         self.executed: A list of records for tests that were actually executed.
         self.passed: A list of records for tests passed.
@@ -227,6 +227,7 @@ class TestResult(object):
         if not isinstance(r, TestResult):
             raise TypeError("Operand %s of type %s is not a TestResult." %
                             (r, type(r)))
+        r.reportNonExecutedRecord()
         sum_result = TestResult()
         for name in sum_result.__dict__:
             l_value = list(getattr(self, name))
@@ -234,8 +235,53 @@ class TestResult(object):
             setattr(sum_result, name, l_value + r_value)
         return sum_result
 
+    def reportNonExecutedRecord(self):
+        """Check and report any requested tests that did not finish.
+
+        Adds a test record to self.error list iff it is in requested list but not
+        self.executed result list.
+        """
+        for requested in self.requested:
+            found = False
+
+            for executed in self.executed:
+                if (requested.test_name == executed.test_name and
+                        requested.test_class == executed.test_class):
+                    found = True
+                    break
+
+            if not found:
+                requested.testBegin()
+                requested.testError()
+                self.error.append(requested)
+
+    def removeRecord(self, record):
+        """Remove a test record from test results.
+
+        Records will be ed using test_name and test_class attribute.
+        All entries that match the provided record in all result lists will
+        be removed after calling this method.
+
+        Args:
+            record: A test record object to add.
+        """
+        lists = [
+            self.requested, self.failed, self.executed, self.passed,
+            self.skipped, self.error
+        ]
+
+        for l in lists:
+            indexToRemove = []
+            for idx in range(len(l)):
+                if (l[idx].test_name == record.test_name and
+                        l[idx].test_class == record.test_class):
+                    indexToRemove.append(idx)
+
+            for idx in reversed(indexToRemove):
+                del l[idx]
+
     def addRecord(self, record):
-        """Adds a test record to test result.
+        """Adds a test record to test results.
 
         A record is considered executed once it's added to the test result.
 
@@ -265,6 +311,20 @@ class TestResult(object):
         record.testFail(e)
         self.executed.append(record)
         self.failed.append(record)
+
+    def passClass(self, class_name, e=None):
+        """Add a record to indicate a test class setup has passed and no test
+        in the class was executed.
+
+        Args:
+            class_name: A string that is the name of the failed test class.
+            e: An exception object.
+        """
+        record = TestResultRecord("setup_class", class_name)
+        record.testBegin()
+        record.testPass(e)
+        self.executed.append(record)
+        self.passed.append(record)
 
     def skipClass(self, class_name, reason):
         """Add a record to indicate all test cases in the class are skipped.
@@ -296,7 +356,9 @@ class TestResult(object):
             A json-format string representing the test results.
         """
         d = {}
-        executed = [record.getDict() for record in self.executed]
+        records = list_utils.MergeUniqueKeepOrder(
+            self.executed, self.failed, self.passed, self.skipped, self.error)
+        executed = [record.getDict() for record in records]
         d["Results"] = executed
         d["Summary"] = self.summaryDict()
         jsonString = json.dumps(d, indent=4, sort_keys=True)

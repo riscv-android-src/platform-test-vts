@@ -111,6 +111,8 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     static final String ENABLE_SYSTRACE = "enable_systrace";
     static final String HAL_HIDL_REPLAY_TEST_TRACE_PATHS = "hal_hidl_replay_test_trace_paths";
     static final String HAL_HIDL_PACKAGE_NAME = "hal_hidl_package_name";
+    static final String REPORT_MESSAGE_FILE_NAME = "report_proto.msg";
+    static final String RUN_AS_VTS_SELF_TEST = "run_as_vts_self_test";
     static final String SYSTRACE_PROCESS_NAME = "systrace_process_name";
     static final String TEMPLATE_BINARY_TEST_PATH = "vts/testcases/template/binary_test/binary_test";
     static final String TEMPLATE_GTEST_BINARY_TEST_PATH = "vts/testcases/template/gtest_binary_test/gtest_binary_test";
@@ -327,6 +329,14 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     @Option(name = "python-binary", description = "python binary to use "
             + "(optional)")
     private String mPythonBin = null;
+
+    @Option(name = "run-as-vts-self-test",
+            description = "Run the module as vts-selftest. "
+                    + "When the value is set to true, only setUpClass and tearDownClass function "
+                    + "of the module will be called to ensure the framework is free of bug. "
+                    + "Note that exception in tearDownClass will not be reported as failure.")
+    private boolean mRunAsVtsSelfTest = false;
+
     private IRunUtil mRunUtil = null;
     private IBuildInfo mBuildInfo = null;
     private String mRunName = "VtsHostDrivenTest";
@@ -576,7 +586,7 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
 
         JSONArray testBedArray = (JSONArray) jsonObject.get("test_bed");
         if (testBedArray.length() == 0) {
-            JSONObject device = new JSONObject();
+            JSONObject testBedItemObject = new JSONObject();
             String testName;
             if (mTestModuleName != null) {
                 testName = mTestModuleName;
@@ -593,12 +603,12 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
                 }
             }
             CLog.logAndDisplay(LogLevel.INFO, "Setting test name as %s", testName);
-            device.put(NAME, testName);
-            device.put(ANDROIDDEVICE, deviceArray);
-            testBedArray.put(device);
+            testBedItemObject.put(NAME, testName);
+            testBedItemObject.put(ANDROIDDEVICE, deviceArray);
+            testBedArray.put(testBedItemObject);
         } else if (testBedArray.length() == 1) {
-            JSONObject device = (JSONObject) testBedArray.get(0);
-            device.put(ANDROIDDEVICE, deviceArray);
+            JSONObject testBedItemObject = (JSONObject) testBedArray.get(0);
+            testBedItemObject.put(ANDROIDDEVICE, deviceArray);
         } else {
             CLog.e("Multi-device not yet supported: %d devices requested",
                     testBedArray.length());
@@ -753,6 +763,11 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
             jsonObject.put(LTP_NUMBER_OF_THREADS, mLtpNumberOfThreads);
             CLog.i("Added %s to the Json object", LTP_NUMBER_OF_THREADS);
         }
+
+        if (mRunAsVtsSelfTest) {
+            jsonObject.put(RUN_AS_VTS_SELF_TEST, mRunAsVtsSelfTest);
+            CLog.i("Added %s to the Json object", RUN_AS_VTS_SELF_TEST);
+        }
     }
 
     /**
@@ -880,6 +895,31 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
             parser.processJsonFile(object);
         }
         printVtsLogs(vtsRunnerLogDir);
+
+        File reportMsg;
+        int waitCount = 0;
+        // Wait python process to finish for 3 minutes at most
+        while ((reportMsg = FileUtil.findFile(vtsRunnerLogDir, REPORT_MESSAGE_FILE_NAME)) == null
+                && waitCount < 180) {
+            try {
+                Thread.sleep(1000);
+            } catch (Exception e) {
+                System.out.println(e);
+            }
+            waitCount++;
+        }
+
+        CLog.i("Report message path: %s", reportMsg);
+
+        if (reportMsg == null) {
+            CLog.e("Cannot find report message proto file.");
+        } else if (reportMsg.length() > 0) {
+            CLog.i("Uploading report message. File size: %s", reportMsg.length());
+            //TODO upload report message from here
+        } else {
+            CLog.i("Result uploading is not enabled.");
+        }
+
         FileUtil.recursiveDelete(vtsRunnerLogDir);
         CLog.i("Deleted the runner log dir, %s.", vtsRunnerLogDir);
         if (jsonFilePath != null) {

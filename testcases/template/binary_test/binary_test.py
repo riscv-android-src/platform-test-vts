@@ -24,7 +24,6 @@ from vts.runners.host import base_test
 from vts.runners.host import const
 from vts.runners.host import keys
 from vts.runners.host import test_runner
-from vts.utils.python.controllers import android_device
 from vts.utils.python.common import list_utils
 from vts.utils.python.os import path_utils
 from vts.utils.python.precondition import precondition_utils
@@ -161,11 +160,8 @@ class BinaryTest(base_test.BaseTestClass):
                     tag, path = token.split(self.TAG_DELIMITER)
                 self.profiling_library_path[tag] = path
 
-        if not hasattr(self, "_dut"):
-            self._dut = self.registerController(android_device)[0]
-
-        self._dut.shell.InvokeTerminal("one", int(self.abi_bitness))
-        self.shell = self._dut.shell.one
+        self._dut = self.android_devices[0]
+        self.shell = self._dut.shell
 
         if self.coverage.enabled:
             self.coverage.LoadArtifacts()
@@ -175,7 +171,7 @@ class BinaryTest(base_test.BaseTestClass):
         self.shell.Execute("setenforce 0")  # SELinux permissive mode
 
         if not precondition_utils.CanRunHidlHalTest(self, self._dut,
-                                                    self._dut.shell.one):
+                                                    self.shell):
             self._skip_all_testcases = True
 
         self.testcases = []
@@ -316,7 +312,7 @@ class BinaryTest(base_test.BaseTestClass):
         sources = set(filter(bool, sources))
         paths = [dst for src, dst, tag in sources if src and dst]
         cmd = ['rm -rf %s' % dst for dst in paths]
-        cmd_results = self.shell.Execute(cmd)
+        cmd_results = self.shell.Execute(cmd, no_except=True)
         if not cmd_results or any(cmd_results[const.EXIT_CODE]):
             logging.warning('Failed to clean up test class: %s', cmd_results)
 
@@ -326,7 +322,7 @@ class BinaryTest(base_test.BaseTestClass):
         dirs = list(dir_set)
         dirs.sort(lambda x, y: cmp(len(y), len(x)))
         cmd = ['rmdir %s' % d for d in dirs]
-        cmd_results = self.shell.Execute(cmd)
+        cmd_results = self.shell.Execute(cmd, no_except=True)
         if not cmd_results or any(cmd_results[const.EXIT_CODE]):
             logging.warning('Failed to remove: %s', cmd_results)
 
