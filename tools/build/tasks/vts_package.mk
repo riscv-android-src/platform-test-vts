@@ -47,7 +47,7 @@ test_suite_readme := test/vts/README.md
 include $(BUILD_SYSTEM)/tasks/tools/compatibility.mk
 
 .PHONY: vts
-vts: $(compatibility_zip)
+vts: $(compatibility_zip) run
 $(call dist-for-goals, vts, $(compatibility_zip))
 
 # Packaging rule for android-vts.zip's testcases dir (DATA subdir).
@@ -111,7 +111,9 @@ target_hostdriven_copy_pairs := \
   $(call host-native-copy-pairs,$(target_hostdriven_modules),$(VTS_TESTCASES_OUT))
 
 host_additional_deps_copy_pairs := \
-  test/vts/tools/vts-tradefed/etc/vts-tradefed_win.bat:$(VTS_TOOLS_OUT)/vts-tradefed_win.bat
+  test/vts/tools/vts-hc/run:$(VTS_TOOLS_OUT)/run \
+  test/vts/tools/vts-tradefed/etc/vts-tradefed_win.bat:$(VTS_TOOLS_OUT)/vts-tradefed_win.bat \
+  test/vts/tools/vts-tradefed/CtsDynamicConfig.xml:$(VTS_TESTCASES_OUT)/cts.dynamic
 
 # Packaging rule for host-side Python logic, configs, and data files
 
@@ -186,6 +188,20 @@ kernel_rootdir_test_rc_copy_pairs := \
   $(foreach f,$(kernel_rootdir_test_rc_files),\
     system/core/rootdir/$(f):$(VTS_TESTCASES_OUT)/vts/testcases/kernel/api/rootdir/init_rc_files/$(f)) \
 
+acts_framework_files := \
+  $(call find-files-in-subdirs,tools/test/connectivity/acts/framework/acts,"*.py" -and -type f,.)
+
+acts_framework_copy_pairs := \
+  $(foreach f,$(acts_framework_files),\
+    tools/test/connectivity/acts/framework/acts/$(f):$(VTS_TESTCASES_OUT)/acts/$(f))
+
+acts_testcases_files := \
+  $(call find-files-in-subdirs,tools/test/connectivity/acts/tests/google,"*.py" -and -type f,.)
+
+acts_testcases_copy_pairs := \
+  $(foreach f,$(acts_testcases_files),\
+    tools/test/connectivity/acts/tests/google/$(f):$(VTS_TESTCASES_OUT)/vts/testcases/acts/$(f))
+
 $(compatibility_zip): \
   $(call copy-many-files,$(target_native_copy_pairs)) \
   $(call copy-many-files,$(target_spec_copy_pairs)) \
@@ -202,5 +218,7 @@ $(compatibility_zip): \
   $(call copy-many-files,$(performance_test_res_copy_pairs)) \
   $(call copy-many-files,$(audio_test_res_copy_pairs)) \
   $(call copy-many-files,$(kernel_rootdir_test_rc_copy_pairs)) \
+  $(call copy-many-files,$(acts_framework_copy_pairs)) \
+  $(call copy-many-files,$(acts_testcases_copy_pairs)) \
 
 -include vendor/google_vts/tools/build/vts_package_vendor.mk

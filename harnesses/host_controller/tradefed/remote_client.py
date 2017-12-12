@@ -99,24 +99,14 @@ class RemoteClient(object):
         """Sends ListDevices operation.
 
         Returns:
-            A JSON object which is the devices connected to the host.
+            A list of device_info.DeviceInfo which are the devices connected to
+            the host.
         """
-        return self.SendOperation(remote_operation.ListDevices())
-
-    def RunCommand(self, serial, *command):
-        """Sends a series of operations to run a command.
-
-        Args:
-            serial: The serial number of the device.
-            *command: A list of strings which is the command to execute.
-        """
-        self.SendOperation(remote_operation.AllocateDevice(serial))
-        self.SendOperation(remote_operation.ExecuteCommand(serial, *command))
+        json_obj = self.SendOperation(remote_operation.ListDevices())
+        return remote_operation.ParseListDevicesResponse(json_obj)
 
     def WaitForCommandResult(self, serial, timeout, poll_interval=5):
         """Sends a series of operations to wait until a command finishes.
-
-        This method frees the device if the command finishes before timeout.
 
         Args:
             serial: The serial number of the device.
@@ -127,13 +117,16 @@ class RemoteClient(object):
         Returns:
             A JSON object which is the result of the command.
             None if timeout.
+
+            Sample
+            {'status': 'INVOCATION_SUCCESS',
+             'free_device_state': 'AVAILABLE'}
         """
         deadline = time.time() + timeout
         get_result_op = remote_operation.GetLastCommandResult(serial)
         while True:
             result = self.SendOperation(get_result_op)
             if result["status"] != "EXECUTING":
-                self.SendOperation(remote_operation.FreeDevice(serial))
                 return result
             if time.time() > deadline:
                 return None

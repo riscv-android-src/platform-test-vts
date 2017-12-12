@@ -26,16 +26,9 @@ where %ADB% || (echo Unable to find %ADB% && goto:eof)
 where %JAVA% || (echo Unable to find %JAVA% && goto:eof)
 
 :: check java version
-if [%EXPERIMENTAL_USE_OPENJDK9%] == [] (
-    %JAVA% -version 2>&1 | findstr /R "version\ \"1\.[678].*\"$" || (
-        echo Wrong java version. 1.6, 1.7 or 1.8 is required.
-        goto:eof
-    )
-) else (
-    %JAVA% -version 2>&1 | findstr /R "java .*\"9.*\"$" || (
-        echo Wrong java version. Version 9 is required.
-        goto:eof
-    )
+%JAVA% -version 2>&1 | findstr /R "version\ \"1*\.*[89].*\"$" || (
+    echo Wrong java version. 1.8 or 9 is required.
+    goto:eof
 )
 
 :: check debug flag and set up remote debugging
@@ -104,9 +97,7 @@ for %%J in (%OPTIONAL_JARS%) do (
 :: skip loading shared libraries for host-side executables
 
 :: include any host-side test jars
-for %%F in ("%VTS_ROOT%\android-vts\testcases\*.jar") do (
-    set JAR_PATH=!JAR_PATH!;%%F
-)
+set JAR_PATH=%JAR_PATH%;%VTS_ROOT%\android-vts\testcases\*
 echo JAR_PATH=%JAR_PATH%
 
 cd %VTS_ROOT%/android-vts/testcases

@@ -16,6 +16,8 @@
 
 import json
 
+from vts.harnesses.host_controller.tfc import device_info
+
 
 class RemoteOperationException(Exception):
     """Raised when remote operation fails."""
@@ -25,7 +27,8 @@ class RemoteOperationException(Exception):
 class RemoteOperation(object):
     """The operation sent to TradeFed remote manager.
 
-    An operation is a JSON object with 2 common entries "type" and "version".
+    Args:
+        _obj: A JSON object with at least 2 entries, "type" and "version".
     """
     CURRENT_PROTOCOL_VERSION = 8
 
@@ -36,10 +39,10 @@ class RemoteOperation(object):
             type: A string, the type of the operation.
             **kwargs: The arguments which are specific to the operation type.
         """
-        self.obj = kwargs
-        self.obj["type"] = type
-        if "version" not in self.obj:
-            self.obj["version"] = self.CURRENT_PROTOCOL_VERSION
+        self._obj = kwargs
+        self._obj["type"] = type
+        if "version" not in self._obj:
+            self._obj["version"] = self.CURRENT_PROTOCOL_VERSION
 
     def ParseResponse(self, response_str):
         """Parses the response to the operation.
@@ -58,13 +61,23 @@ class RemoteOperation(object):
             raise RemoteOperationException(response["error"])
         return response
 
+    @property
+    def type(self):
+        """Returns the type of this operation."""
+        return self._obj["type"]
+
     def __str__(self):
         """Converts the JSON object to string."""
-        return json.dumps(self.obj)
+        return json.dumps(self._obj)
 
 
 def ListDevices():
-    """Creates an operation of listing devices.
+    """Creates an operation of listing devices."""
+    return RemoteOperation("LIST_DEVICES")
+
+
+def ParseListDevicesResponse(json_obj):
+    """Parses ListDevices response to a list of DeviceInfo.
 
     Sample response:
     {"serials": [
@@ -72,8 +85,31 @@ def ListDevices():
          "stub": True, "state": "Available", "build": "unknown",
          "serial": "emulator-5554", "sdk": "unknown"},
     ]}
+
+    Args:
+        json_obj: A JSON object, the response to ListDevices.
+
+    Returns:
+        A list of DeviceInfo object.
     """
-    return RemoteOperation("LIST_DEVICES")
+    dev_infos = []
+    for dev_obj in json_obj["serials"]:
+        if dev_obj["product"] == dev_obj["variant"]:
+            run_target = dev_obj["product"]
+        else:
+            run_target = dev_obj["product"] + ":" + dev_obj["variant"]
+        dev_info = device_info.DeviceInfo(
+                battery_level=dev_obj["battery"],
+                build_id=dev_obj["build"],
+                device_serial=dev_obj["serial"],
+                product=dev_obj["product"],
+                product_variant=dev_obj["variant"],
+                run_target=run_target,
+                sdk_version=dev_obj["sdk"],
+                state=dev_obj["state"],
+                stub=dev_obj["stub"])
+        dev_infos.append(dev_info)
+    return dev_infos
 
 
 def AllocateDevice(serial):
