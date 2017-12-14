@@ -875,38 +875,6 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
         VtsMultiDeviceTestResultParser parser =
                 new VtsMultiDeviceTestResultParser(listener, mRunName);
 
-        if (mUseStdoutLogs) {
-            if (commandResult.getStdout() == null) {
-                CLog.e("The std:out is null for CommandResult.");
-                throw new RuntimeException("The std:out is null for CommandResult.");
-            }
-            parser.processNewLines(commandResult.getStdout().split("\n"));
-        } else {
-            // parse from test_run_summary.json instead of std:out
-            String jsonData = null;
-            JSONObject object = null;
-            File testRunSummary = getFileTestRunSummary(vtsRunnerLogDir);
-            if (testRunSummary == null) {
-                throw new RuntimeException("Couldn't locate the file : " +
-                        TEST_RUN_SUMMARY_FILE_NAME);
-            }
-            try {
-                jsonData = FileUtil.readStringFromFile(testRunSummary);
-                CLog.i("Test Result Summary: %s", jsonData);
-                object = new JSONObject(jsonData);
-            } catch (IOException e) {
-                CLog.e("Error occurred in parsing Json file : %s", testRunSummary.toPath());
-            } catch (JSONException e) {
-                CLog.e("Error occurred in parsing Json String : %s", jsonData);
-            }
-            if (object == null) {
-                CLog.e("Json object is null.");
-                throw new RuntimeException("Json object is null.");
-            }
-            parser.processJsonFile(object);
-        }
-        printVtsLogs(vtsRunnerLogDir);
-
         File reportMsg;
         int waitCount = 0;
         // Wait python process to finish for 3 minutes at most
@@ -919,6 +887,38 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
             }
             waitCount++;
         }
+
+        if (mUseStdoutLogs) {
+            if (commandResult.getStdout() == null) {
+                CLog.e("The std:out is null for CommandResult.");
+                throw new RuntimeException("The std:out is null for CommandResult.");
+            }
+            parser.processNewLines(commandResult.getStdout().split("\n"));
+        } else {
+            // parse from test_run_summary.json instead of std:out
+            String jsonData = null;
+            JSONObject object = null;
+            File testRunSummary = getFileTestRunSummary(vtsRunnerLogDir);
+            if (testRunSummary == null) {
+                CLog.e("Couldn't locate the file : " + TEST_RUN_SUMMARY_FILE_NAME);
+            } else {
+                try {
+                    jsonData = FileUtil.readStringFromFile(testRunSummary);
+                    CLog.i("Test Result Summary: %s", jsonData);
+                    object = new JSONObject(jsonData);
+                } catch (IOException e) {
+                    CLog.e("Error occurred in parsing Json file : %s", testRunSummary.toPath());
+                } catch (JSONException e) {
+                    CLog.e("Error occurred in parsing Json String : %s", jsonData);
+                }
+                if (object == null) {
+                    CLog.e("Json object is null.");
+                    throw new RuntimeException("Json object is null.");
+                }
+                parser.processJsonFile(object);
+            }
+        }
+        printVtsLogs(vtsRunnerLogDir);
 
         CLog.i("Report message path: %s", reportMsg);
 
