@@ -16,19 +16,26 @@
 
 package com.android.tradefed.targetprep;
 
+import com.android.compatibility.common.tradefed.build.VtsCompatibilityInvocationHelper;
+import com.android.annotations.VisibleForTesting;
 import com.android.tradefed.build.IBuildInfo;
 import com.android.tradefed.config.Option;
 import com.android.tradefed.config.OptionClass;
-import com.android.tradefed.device.CollectingOutputReceiver;
 import com.android.tradefed.device.DeviceNotAvailableException;
 import com.android.tradefed.device.ITestDevice;
 import com.android.tradefed.invoker.IInvocationContext;
 import com.android.tradefed.log.LogUtil.CLog;
+import com.android.tradefed.targetprep.TargetSetupError;
 import com.android.tradefed.targetprep.multi.IMultiTargetPreparer;
 import com.android.tradefed.testtype.IAbi;
 import com.android.tradefed.testtype.IAbiReceiver;
+import com.android.tradefed.util.CmdUtil;
+import com.android.tradefed.util.FileUtil;
 
-import java.util.concurrent.TimeUnit;
+import java.io.File;
+import java.io.IOException;
+import java.util.NoSuchElementException;
+import java.util.function.Predicate;
 
 /**
  * Starts and stops a HAL (Hardware Abstraction Layer) adapter.
@@ -36,24 +43,29 @@ import java.util.concurrent.TimeUnit;
 @OptionClass(alias = "vts-hal-adapter-preparer")
 public class VtsHalAdapterPreparer
         implements ITargetPreparer, ITargetCleaner, IMultiTargetPreparer, IAbiReceiver {
-    private static final int THREAD_COUNT_DEFAULT = 1;
-    private static final String SERVICE_NAME_DEFAULT = "default";
-    private static final long FRAMEWORK_START_TIMEOUT = 1000 * 60 * 2;  // 2 minutes.
-    // The path of a sysprop to stop HIDL adapaters. Currently, there's one global flag for all
-    // adapters.
-    private static final String ADAPTER_SYSPROP = "test.hidl.adapters.deactivated";
+    static final int THREAD_COUNT_DEFAULT = 1;
+    static final long FRAMEWORK_START_TIMEOUT = 1000 * 60 * 2; // 2 minutes.
+
+    static final String HAL_INTERFACE_SEP = "::";
+    static final String HAL_INSTANCE_SEP = "/";
+    // Relative path to vts native tests directory.
+    static final String VTS_NATIVE_TEST_DIR = "DATA/nativetest%s/";
+    // Path of native tests directory on target device.
+    static final String TARGET_NATIVE_TEST_DIR = "/data/nativetest%s/";
+    // Sysprop to stop HIDL adapaters. Currently, there's one global flag for all adapters.
+    static final String ADAPTER_SYSPROP = "test.hidl.adapters.deactivated";
     // The wrapper script to start an adapter binary in the background.
-    private static final String SCRIPT_PATH = "/data/local/tmp/vts_adapter.sh";
+    static final String SCRIPT_PATH = "/data/local/tmp/vts_adapter.sh";
+    // Command to list the registered instance for the given hal@version.
+    static final String LIST_HAL_CMD =
+            "lshal -ti --neat | grep -E '^hwbinder' | awk '{print $2}' | grep %s";
 
     @Option(name = "adapter-binary-name",
             description = "Adapter binary file name (typically under /data/nativetest*/)")
     private String mAdapterBinaryName = null;
 
-    @Option(name = "interface-name", description = "Adapter's main interface name")
-    private String mInterfaceName = null;
-
-    @Option(name = "service-name", description = "Instance service name of a HAL adapter to create")
-    private String mServiceName = SERVICE_NAME_DEFAULT;
+    @Option(name = "hal-package-name", description = "Target hal to adapter")
+    private String mPackageName = null;
 
     @Option(name = "thread-count", description = "HAL adapter's thread count")
     private int mThreadCount = THREAD_COUNT_DEFAULT;
@@ -61,32 +73,55 @@ public class VtsHalAdapterPreparer
     // Application Binary Interface (ABI) info of the current test run.
     private IAbi mAbi = null;
 
+    // CmdUtil help to verify the cmd results.
+    private CmdUtil mCmdUtil = null;
+    // Predicates to stop retrying cmd.
+    private Predicate<String> mCheckEmpty = (String str) -> {
+        return str.isEmpty();
+    };
+    private Predicate<String> mCheckNonEmpty = (String str) -> {
+        return !str.isEmpty();
+    };
     /**
      * {@inheritDoc}
      */
     @Override
     public void setUp(ITestDevice device, IBuildInfo buildInfo)
-            throws TargetSetupError, BuildError, DeviceNotAvailableException {
-        CollectingOutputReceiver out = new CollectingOutputReceiver();
-        device.executeShellCommand(String.format("lshal | grep %s", mInterfaceName), out);
-        CLog.i("setUp: lshal (entry):\n%s", out.getOutput());
-
-        device.executeShellCommand(String.format("setprop %s false", ADAPTER_SYSPROP));
-
-        // starts adapter
+            throws TargetSetupError, BuildError, DeviceNotAvailableException, RuntimeException {
         String bitness =
                 (mAbi != null) ? ((mAbi.getBitness() == "32") ? "" : mAbi.getBitness()) : "";
-        String command = String.format(". %s /data/nativetest%s/%s %s %s %d", SCRIPT_PATH, bitness,
-                mAdapterBinaryName, mInterfaceName, mServiceName, mThreadCount);
-        CLog.i("Command: %s", command);
-        out = new CollectingOutputReceiver();
-        device.executeShellCommand(command, out);
-        CLog.i("Command output:\n%s", out.getOutput());
-
         try {
-            TimeUnit.SECONDS.sleep(3);
-        } catch (InterruptedException ex) {
-            /* pass */
+            pushAdapter(device, bitness);
+        } catch (IOException | NoSuchElementException e) {
+            CLog.e("Could not push adapter: " + e.toString());
+            throw new TargetSetupError("Could not push adapter.");
+        }
+        device.executeShellCommand(String.format("setprop %s false", ADAPTER_SYSPROP));
+        String out = device.executeShellCommand(String.format(LIST_HAL_CMD, mPackageName));
+        for (String line : out.split("\n")) {
+            if (!line.isEmpty()) {
+                if (!line.contains(HAL_INTERFACE_SEP)) {
+                    throw new RuntimeException("HAL instance with wrong format.");
+                }
+                String interfaceInstance = line.split(HAL_INTERFACE_SEP, 2)[1];
+                if (!interfaceInstance.contains(HAL_INSTANCE_SEP)) {
+                    throw new RuntimeException("HAL instance with wrong format.");
+                }
+                String interfaceName = interfaceInstance.split(HAL_INSTANCE_SEP, 2)[0];
+                String instanceName = interfaceInstance.split(HAL_INSTANCE_SEP, 2)[1];
+                // starts adapter
+                String command = String.format("%s /data/nativetest%s/%s %s %s %d", SCRIPT_PATH,
+                        bitness, mAdapterBinaryName, interfaceName, instanceName, mThreadCount);
+                CLog.i("Trying to adapter for %s",
+                        mPackageName + "::" + interfaceName + "/" + instanceName);
+                device.executeShellCommand(command);
+            }
+        }
+
+        mCmdUtil = mCmdUtil != null ? mCmdUtil : new CmdUtil();
+        if (!mCmdUtil.waitCmdResultWithDelay(
+                    device, String.format(LIST_HAL_CMD, mPackageName), mCheckEmpty)) {
+            throw new TargetSetupError("HAL adapter failed.");
         }
 
         device.executeShellCommand("stop");
@@ -96,9 +131,10 @@ public class VtsHalAdapterPreparer
             throw new DeviceNotAvailableException("Framework failed to start.");
         }
 
-        out = new CollectingOutputReceiver();
-        device.executeShellCommand(String.format("lshal | grep %s", mInterfaceName), out);
-        CLog.i("setUp: lshal (exit):\n%s", out.getOutput());
+        if (!mCmdUtil.waitCmdResultWithDelay(
+                    device, "service list | grep IPackageManager", mCheckNonEmpty)) {
+            throw new TargetSetupError("Failed to start package service");
+        }
     }
 
     /**
@@ -116,16 +152,12 @@ public class VtsHalAdapterPreparer
     @Override
     public void tearDown(ITestDevice device, IBuildInfo buildInfo, Throwable e)
             throws DeviceNotAvailableException {
-        CollectingOutputReceiver out = new CollectingOutputReceiver();
-        device.executeShellCommand(String.format("lshal | grep %s", mInterfaceName), out);
-        CLog.i("tearDown: lshal (entry):\n%s", out.getOutput());
-
         // stops adapter
         device.executeShellCommand(String.format("setprop %s true", ADAPTER_SYSPROP));
-        try {
-            TimeUnit.SECONDS.sleep(3);
-        } catch (InterruptedException ex) {
-            /* pass */
+        mCmdUtil = mCmdUtil != null ? mCmdUtil : new CmdUtil();
+        if (!mCmdUtil.waitCmdResultWithDelay(
+                    device, String.format(LIST_HAL_CMD, mPackageName), mCheckNonEmpty)) {
+            throw new RuntimeException("HAL restore failed.");
         }
 
         device.executeShellCommand("stop");
@@ -134,10 +166,6 @@ public class VtsHalAdapterPreparer
         if (!device.waitForBootComplete(FRAMEWORK_START_TIMEOUT)) {
             throw new DeviceNotAvailableException("Framework failed to start.");
         }
-
-        out = new CollectingOutputReceiver();
-        device.executeShellCommand(String.format("lshal | grep %s", mInterfaceName), out);
-        CLog.i("tearDown: lshal (exit):\n%s", out.getOutput());
     }
 
     /**
@@ -163,5 +191,42 @@ public class VtsHalAdapterPreparer
     @Override
     public IAbi getAbi() {
         return mAbi;
+    }
+
+    /**
+     * Push the required adapter binary to device.
+     *
+     * @param device device object.
+     * @param bitness ABI bitness.
+     * @throws DeviceNotAvailableException.
+     * @throws IOException.
+     * @throws NoSuchElementException.
+     */
+    private void pushAdapter(ITestDevice device, String bitness)
+            throws DeviceNotAvailableException, IOException, NoSuchElementException {
+        VtsCompatibilityInvocationHelper invocationHelper = createVtsHelper();
+        File adapterDir = new File(
+                invocationHelper.getTestsDir(), String.format(VTS_NATIVE_TEST_DIR, bitness));
+        File adapter = FileUtil.findFile(adapterDir, mAdapterBinaryName);
+        if (adapter != null) {
+            CLog.i("Pushing %s", mAdapterBinaryName);
+            device.pushFile(
+                    adapter, String.format(TARGET_NATIVE_TEST_DIR, bitness) + mAdapterBinaryName);
+        } else {
+            throw new NoSuchElementException("Could not find adapter: " + mAdapterBinaryName);
+        }
+    }
+
+    /**
+     * Create and return a {@link VtsCompatibilityInvocationHelper} to use during the preparer.
+     */
+    @VisibleForTesting
+    VtsCompatibilityInvocationHelper createVtsHelper() {
+        return new VtsCompatibilityInvocationHelper();
+    }
+
+    @VisibleForTesting
+    void setCmdUtil(CmdUtil cmdUtil) {
+        mCmdUtil = cmdUtil;
     }
 }
