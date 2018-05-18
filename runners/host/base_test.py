@@ -154,7 +154,7 @@ class BaseTestClass(object):
             enable_module_name_prefix_matching=True,
             module_name=self.test_module_name,
             expand_bitness=True)
-        logging.info('Test filter: %s' % self.test_filter)
+        logging.debug('Test filter: %s' % self.test_filter)
 
         # TODO: get abi information differently for multi-device support.
         # Set other optional parameters
@@ -245,7 +245,7 @@ class BaseTestClass(object):
             setattr(self, name, self.user_params[name])
         for name in opt_param_names:
             if name not in self.user_params:
-                logging.info(("Missing optional user param '%s' in "
+                logging.debug(("Missing optional user param '%s' in "
                               "configuration, continue."), name)
             else:
                 setattr(self, name, self.user_params[name])
@@ -427,6 +427,8 @@ class BaseTestClass(object):
                 if native_server_process_names:
                     for native_server_process_name in native_server_process_names:
                         while True:
+                            logging.info("Checking process %s",
+                                         native_server_process_name)
                             cmd_result = device.shell.Execute("ps -A")
                             if cmd_result[const.EXIT_CODE][0] != 0:
                                 logging.error("ps command failed (exit code: %s",
@@ -434,11 +436,9 @@ class BaseTestClass(object):
                                 break
                             if (native_server_process_name not in cmd_result[
                                     const.STDOUT][0]):
-                                logging.info("Process %s not running",
+                                logging.debug("Process %s not running",
                                              native_server_process_name)
                                 break
-                            logging.info("Checking process %s",
-                                         native_server_process_name)
                             time.sleep(1)
 
         return self.setUpClass()
@@ -472,7 +472,7 @@ class BaseTestClass(object):
                                          _REPORT_MESSAGE_FILE_NAME)
 
         if message_b:
-            logging.info('Result proto message path: %s', report_proto_path)
+            logging.debug('Result proto message path: %s', report_proto_path)
 
         with open(report_proto_path, "wb") as f:
             f.write(message_b)
@@ -558,10 +558,9 @@ class BaseTestClass(object):
             self.web.SetTestResult(ReportMsg.TEST_CASE_RESULT_FAIL)
         self.onFail(record.test_name, begin_time)
         if self._bug_report_on_failure:
-            self.DumpBugReport(
-                '%s-%s' % (self.test_module_name, record.test_name))
+            self.DumpBugReport(ecord.test_name)
         if self._logcat_on_failure:
-            self.DumpLogcat('%s-%s' % (self.test_module_name, record.test_name))
+            self.DumpLogcat(record.test_name)
 
     def onFail(self, test_name, begin_time):
         """A function that is executed upon a test case failure.
@@ -582,7 +581,7 @@ class BaseTestClass(object):
         begin_time = logger.epochToLogLineTimestamp(record.begin_time)
         msg = record.details
         if msg:
-            logging.info(msg)
+            logging.debug(msg)
         logging.info(RESULT_LINE_TEMPLATE, test_name, record.result)
         if self.web.enabled:
             self.web.SetTestResult(ReportMsg.TEST_CASE_RESULT_PASS)
@@ -606,7 +605,7 @@ class BaseTestClass(object):
         test_name = record.test_name
         begin_time = logger.epochToLogLineTimestamp(record.begin_time)
         logging.info(RESULT_LINE_TEMPLATE, test_name, record.result)
-        logging.info("Reason to skip: %s", record.details)
+        logging.debug("Reason to skip: %s", record.details)
         if self.web.enabled:
             self.web.SetTestResult(ReportMsg.TEST_CASE_RESULT_SKIP)
         self.onSkip(test_name, begin_time)
@@ -654,10 +653,9 @@ class BaseTestClass(object):
             self.web.SetTestResult(ReportMsg.TEST_CASE_RESULT_EXCEPTION)
         self.onException(test_name, begin_time)
         if self._bug_report_on_failure:
-            self.DumpBugReport(
-                '%s-%s' % (self.test_module_name, record.test_name))
+            self.DumpBugReport(ecord.test_name)
         if self._logcat_on_failure:
-            self.DumpLogcat('%s-%s' % (self.test_module_name, record.test_name))
+            self.DumpLogcat(record.test_name)
 
     def onException(self, test_name, begin_time):
         """A function that is executed upon an unhandled exception from a test
@@ -1074,17 +1072,17 @@ class BaseTestClass(object):
         try:
             # Check if module is running in self test mode.
             if self.run_as_vts_self_test:
-                logging.info('setUpClass function was executed successfully.')
+                logging.debug('setUpClass function was executed successfully.')
                 self.results.passClass(self.test_module_name)
                 return self.results
 
             for test_name, test_func in tests:
                 if test_name.startswith(STR_GENERATE):
-                    logging.info(
+                    logging.debug(
                         "Executing generated test trigger function '%s'",
                         test_name)
                     test_func()
-                    logging.info("Finished '%s'", test_name)
+                    logging.debug("Finished '%s'", test_name)
                 else:
                     self.execOneTest(test_name, test_func, None)
             if self.isSkipAllTests() and not self.results.executed:
@@ -1093,10 +1091,10 @@ class BaseTestClass(object):
                     "All test cases skipped; unable to find any test case.")
             return self.results
         except (signals.TestAbortClass, acts_signals.TestAbortClass):
-            logging.info("Received TestAbortClass signal")
+            logging.error("Received TestAbortClass signal")
             return self.results
         except (signals.TestAbortAll, acts_signals.TestAbortAll) as e:
-            logging.info("Received TestAbortAll signal")
+            logging.error("Received TestAbortAll signal")
             # Piggy-back test results on this exception object so we don't lose
             # results from this test class.
             setattr(e, "results", self.results)
@@ -1163,15 +1161,15 @@ class BaseTestClass(object):
             prefix = re.sub('[^\w\-_\. ]', '_', prefix) + '_'
 
         for device in self.android_devices:
-            file_name = (prefix
-                         + _BUG_REPORT_FILE_PREFIX
+            file_name = (_BUG_REPORT_FILE_PREFIX
+                         + prefix
                          + '_%s' % device.serial
                          + _BUG_REPORT_FILE_EXTENSION)
 
             file_path = os.path.join(logging.log_path,
                                      file_name)
 
-            logging.info('Catching bugreport %s...' % file_path)
+            logging.info('Dumping bugreport %s...' % file_path)
             device.adb.bugreport(file_path)
 
     def skipAllTests(self, msg):
@@ -1226,8 +1224,8 @@ class BaseTestClass(object):
 
         for device in self.android_devices:
             for buffer in LOGCAT_BUFFERS:
-                file_name = (prefix
-                             + _LOGCAT_FILE_PREFIX
+                file_name = (_LOGCAT_FILE_PREFIX
+                             + prefix
                              + '_%s_' % buffer
                              + device.serial
                              + _LOGCAT_FILE_EXTENSION)
