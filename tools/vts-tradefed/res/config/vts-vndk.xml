@@ -16,9 +16,9 @@
 <configuration description="VTS VNDK (Vendor NDK) Test Plan">
   <include name="vts-base" />
   <option name="plan" value="vts" />
-  <option name="test-tag" value="vts" />
+  <option name="test-tag" value="vts-star" />
   <option name="vts-plan-result:plan-name" value="vts-vndk" />
 
-  <option name="compatibility:include-filter" value="VtsVndkDependency" />
+  <option name="compatibility:module-metadata-include-filter" key="plan" value="vts-vndk" />
 
 </configuration>

@@ -39,9 +39,8 @@ class CtsTest(base_test.BaseTestClass):
     ]
 
     def setUpClass(self):
-        self.dut = self.registerController(android_device)[0]
-        self.dut.shell.InvokeTerminal("one")
-        self.dut.shell.one.Execute("setenforce 0")  # SELinux permissive mode
+        self.dut = self.android_devices[0]
+        self.dut.shell.Execute("setenforce 0")  # SELinux permissive mode
         self.testcases = []
         self.CreateTestCases()
 
@@ -55,7 +54,7 @@ class CtsTest(base_test.BaseTestClass):
     def CreateTestCases(self):
         '''Create test configs.'''
         for testcase in self.CTS_TESTS:
-            logging.info('Creating test case %s.', testcase["name"])
+            logging.debug('Creating test case %s.', testcase["name"])
             self.testcases.append(testcase)
 
     def RunTestCase(self, test_case):

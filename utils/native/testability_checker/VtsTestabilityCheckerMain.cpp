@@ -18,10 +18,12 @@
 #include <iostream>
 
 #include <hidl-util/FQName.h>
+#include <hidl/ServiceManagement.h>
 #include <vintf/VintfObject.h>
 
 #include "VtsTestabilityChecker.h"
 
+using android::hidl::manager::V1_0::IServiceManager;
 using android::vintf::VintfObject;
 using std::cerr;
 using std::cout;
@@ -82,8 +84,8 @@ int main(int argc, char** argv) {
     return -1;
   }
 
-  android::FQName hal_fq_name = android::FQName(argv[optind]);
-  if (!hal_fq_name.isValid()) {
+  android::FQName hal_fq_name;
+  if (!android::FQName::parse(argv[optind], &hal_fq_name)) {
     cerr << "Invalid hal name: " << argv[optind] << endl;
     return -1;
   }
@@ -119,9 +121,16 @@ int main(int argc, char** argv) {
     return -1;
   }
 
+  android::sp<IServiceManager> sm =
+      ::android::hardware::defaultServiceManager();
+  if (sm == nullptr) {
+    cerr << "failed to get IServiceManager" << endl;
+    return -1;
+  }
+
   android::vts::VtsTestabilityChecker checker(framework_comp_matrix.get(),
                                               framework_hal_manifest.get(),
-                                              device_hal_manifest.get());
+                                              device_hal_manifest.get(), sm);
   set<string> instances;
   bool result = false;
   if (is_compliance_test) {

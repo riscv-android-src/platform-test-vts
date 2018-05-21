@@ -4,11 +4,11 @@
 #undef LOG_TAG
 #define LOG_TAG "FuzzerExtended_android_hardware_tests_bar_V1_0_IBar"
 
-#include <stdio.h>
+#include <log/log.h>
 #include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <utils/Log.h>
 
 #include <driver_base/DriverBase.h>
 #include <driver_base/DriverCallbackBase.h>
@@ -35,7 +35,7 @@
 using namespace android::hardware::tests::bar::V1_0;
 namespace android {
 namespace vts {
-void MessageTo__android__hardware__tests__bar__V1_0__IBar__SomethingRelated(const VariableSpecificationMessage& var_msg, ::android::hardware::tests::bar::V1_0::IBar::SomethingRelated* arg);
+void MessageTo__android__hardware__tests__bar__V1_0__IBar__SomethingRelated(const VariableSpecificationMessage& var_msg, ::android::hardware::tests::bar::V1_0::IBar::SomethingRelated* arg, const string& callback_socket_name);
 bool Verify__android__hardware__tests__bar__V1_0__IBar__SomethingRelated(const VariableSpecificationMessage& expected_result, const VariableSpecificationMessage& actual_result);
 void SetResult__android__hardware__tests__bar__V1_0__IBar__SomethingRelated(VariableSpecificationMessage* result_msg, ::android::hardware::tests::bar::V1_0::IBar::SomethingRelated result_value);
 
@@ -45,6 +45,10 @@ class Vts_android_hardware_tests_bar_V1_0_IBar : public ::android::hardware::tes
         : callback_socket_name_(callback_socket_name) {};
 
     virtual ~Vts_android_hardware_tests_bar_V1_0_IBar() = default;
+
+    ::android::hardware::Return<void> convertToBoolIfSmall(
+        ::android::hardware::tests::foo::V1_0::IFoo::Discriminator arg0,
+        const ::android::hardware::hidl_vec<::android::hardware::tests::foo::V1_0::IFoo::Union>& arg1, std::function<void(const ::android::hardware::hidl_vec<::android::hardware::tests::foo::V1_0::IFoo::ContainsUnion>& arg0)> cb) override;
 
     ::android::hardware::Return<void> doThis(
         float arg0) override;

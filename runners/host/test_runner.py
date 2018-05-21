@@ -106,14 +106,6 @@ def runTestClass(test_class):
     test_identifiers = [(test_cls_name, None)]
 
     for config in test_configs:
-        if keys.ConfigKeys.KEY_TEST_MAX_TIMEOUT in config:
-            timeout_sec = int(config[
-                keys.ConfigKeys.KEY_TEST_MAX_TIMEOUT]) / 1000.0
-        else:
-            timeout_sec = 60 * 60 * 3
-            logging.warning("%s unspecified. Set timeout to %s seconds.",
-                            keys.ConfigKeys.KEY_TEST_MAX_TIMEOUT, timeout_sec)
-
         watcher_enabled = threading.Event()
 
         def watchStdin():
@@ -199,7 +191,10 @@ class TestRunner(object):
         self.log_severity = self.test_configs.get(
             keys.ConfigKeys.KEY_LOG_SEVERITY, "INFO").upper()
         logger.setupTestLogger(
-            self.log_path, self.testbed_name, log_severity=self.log_severity)
+            self.log_path,
+            self.testbed_name,
+            filename="test_run_details.txt",
+            log_severity=self.log_severity)
         self.controller_registry = {}
         self.controller_destructors = {}
         self.run_list = run_list
@@ -310,7 +305,7 @@ class TestRunner(object):
             ControllerError is raised if no corresponding config can be found,
             or if the controller module has already been registered.
         """
-        logging.info("cwd: %s", os.getcwd())
+        logging.debug("cwd: %s", os.getcwd())
         logging.info("adb devices: %s", module.list_adb_devices())
         self.verifyControllerModule(module)
         module_ref_name = module.__name__.split('.')[-1]
@@ -335,7 +330,7 @@ class TestRunner(object):
                 for config in controller_config:
                     if isinstance(config, dict):
                         config["log_severity"] = self.log_severity
-            logging.info("controller_config: %s", controller_config)
+            logging.debug("controller_config: %s", controller_config)
             if "use_vts_agent" not in self.testbed_configs:
                 objects = create(controller_config, start_services)
             else:

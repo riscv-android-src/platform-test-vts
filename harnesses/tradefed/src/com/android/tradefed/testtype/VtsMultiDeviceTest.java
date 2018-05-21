@@ -23,28 +23,30 @@ import com.android.tradefed.config.Option;
 import com.android.tradefed.config.OptionClass;
 import com.android.tradefed.device.DeviceNotAvailableException;
 import com.android.tradefed.device.ITestDevice;
+import com.android.tradefed.invoker.IInvocationContext;
 import com.android.tradefed.log.LogUtil.CLog;
 import com.android.ddmlib.Log.LogLevel;
 import com.android.tradefed.result.ITestInvocationListener;
 import com.android.tradefed.targetprep.VtsCoveragePreparer;
-import com.android.tradefed.util.ArrayUtil;
+import com.android.tradefed.targetprep.VtsPythonVirtualenvPreparer;
 import com.android.tradefed.util.CommandResult;
 import com.android.tradefed.util.CommandStatus;
 import com.android.tradefed.util.FileUtil;
 import com.android.tradefed.util.JsonUtil;
-import com.android.tradefed.util.ProcessHelper;
+import com.android.tradefed.util.OutputUtil;
 import com.android.tradefed.util.RunInterruptedException;
-import com.android.tradefed.util.IRunUtil;
-import com.android.tradefed.util.RunUtil;
 import com.android.tradefed.util.VtsDashboardUtil;
+import com.android.tradefed.util.VtsPythonRunnerHelper;
 import com.android.tradefed.util.VtsVendorConfigFileUtil;
 import com.android.tradefed.testtype.IAbi;
+import com.android.tradefed.testtype.IInvocationContextReceiver;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONException;
 
 import java.io.BufferedWriter;
+import java.util.Collection;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
@@ -52,9 +54,10 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Paths;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.Set;
-import java.util.Collection;
+import java.util.List;
 import java.util.ArrayList;
 import java.util.Arrays;
 
@@ -64,9 +67,11 @@ import java.util.Arrays;
  */
 
 @OptionClass(alias = "vtsmultidevicetest")
-public class VtsMultiDeviceTest implements IDeviceTest, IRemoteTest, ITestFilterReceiver,
-IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
-
+public class VtsMultiDeviceTest
+        implements IDeviceTest, IRemoteTest, ITestFilterReceiver, IRuntimeHintProvider,
+                   ITestCollector, IBuildReceiver, IAbiReceiver, IInvocationContextReceiver {
+    static final String ACTS_TEST_MODULE = "ACTS_TEST_MODULE";
+    static final String ADAPTER_ACTS_PATH = "vts/runners/adapters/acts/acts_adapter";
     static final String ANDROIDDEVICE = "AndroidDevice";
     static final String BUILD = "build";
     static final String BUILD_ID = "build_id";
@@ -76,23 +81,20 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     static final String LOG_PATH = "log_path";
     static final String LOG_SEVERITY = "log_severity";
     static final String NAME = "name";
-    static final String OS_NAME = "os.name";
-    static final String WINDOWS = "Windows";
-    static final String PYTHONPATH = "PYTHONPATH";
     static final String SERIAL = "serial";
     static final String TESTMODULE = "TestModule";
     static final String TEST_BED = "test_bed";
     static final String TEST_PLAN_REPORT_FILE = "TEST_PLAN_REPORT_FILE";
     static final String TEST_SUITE = "test_suite";
-    static final String TEST_MAX_TIMEOUT = "test_max_timeout";
-    static final String VIRTUAL_ENV_PATH = "VIRTUALENVPATH";
     static final String ABI_NAME = "abi_name";
     static final String ABI_BITNESS = "abi_bitness";
     static final String SKIP_ON_32BIT_ABI = "skip_on_32bit_abi";
     static final String SKIP_ON_64BIT_ABI = "skip_on_64bit_abi";
     static final String SKIP_IF_THERMAL_THROTTLING = "skip_if_thermal_throttling";
+    static final String DISABLE_CPU_FREQUENCY_SCALING = "disable_cpu_frequency_scaling";
+    static final String DISABLE_FRAMEWORK = "DISABLE_FRAMEWORK";
+    static final String STOP_NATIVE_SERVERS = "STOP_NATIVE_SERVERS";
     static final String RUN_32BIT_ON_64BIT_ABI = "run_32bit_on_64bit_abi";
-    static final String VTS = "vts";
     static final String CONFIG_FILE_EXTENSION = ".config";
     static final String INCLUDE_FILTER = "include_filter";
     static final String EXCLUDE_FILTER = "exclude_filter";
@@ -103,28 +105,39 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     static final String BINARY_TEST_ARGS = "binary_test_args";
     static final String BINARY_TEST_LD_LIBRARY_PATH = "binary_test_ld_library_path";
     static final String BINARY_TEST_PROFILING_LIBRARY_PATH = "binary_test_profiling_library_path";
-    static final String BINARY_TEST_DISABLE_FRAMEWORK = "binary_test_disable_framework";
+    @Deprecated static final String BINARY_TEST_DISABLE_FRAMEWORK = "binary_test_disable_framework";
+    @Deprecated
     static final String BINARY_TEST_STOP_NATIVE_SERVERS = "binary_test_stop_native_servers";
     static final String BINARY_TEST_TYPE_GTEST = "gtest";
     static final String BINARY_TEST_TYPE_LLVMFUZZER = "llvmfuzzer";
     static final String BINARY_TEST_TYPE_HAL_HIDL_GTEST = "hal_hidl_gtest";
     static final String BINARY_TEST_TYPE_HAL_HIDL_REPLAY_TEST = "hal_hidl_replay_test";
     static final String BINARY_TEST_TYPE_HOST_BINARY_TEST = "host_binary_test";
-    static final String BUG_REPORT_ON_FAILURE = "bug_report_on_failure";
+    static final String BUG_REPORT_ON_FAILURE = "BUG_REPORT_ON_FAILURE";
+    static final String COLLECT_TESTS_ONLY = "collect_tests_only";
+    static final String CONFIG_STR = "CONFIG_STR";
+    static final String CONFIG_INT = "CONFIG_INT";
+    static final String CONFIG_BOOL = "CONFIG_BOOL";
+    static final String LOGCAT_ON_FAILURE = "LOGCAT_ON_FAILURE";
     static final String ENABLE_COVERAGE = "enable_coverage";
+    static final String EXCLUDE_COVERAGE_PATH = "exclude_coverage_path";
     static final String ENABLE_PROFILING = "enable_profiling";
     static final String ENABLE_SANCOV = "enable_sancov";
     static final String GTEST_BATCH_MODE = "gtest_batch_mode";
     static final String SAVE_TRACE_FIEL_REMOTE = "save_trace_file_remote";
     static final String OUTPUT_COVERAGE_REPORT = "output_coverage_report";
+    static final String COVERAGE_REPORT_PATH = "coverage_report_path";
     static final String GLOBAL_COVERAGE = "global_coverage";
     static final String LTP_NUMBER_OF_THREADS = "ltp_number_of_threads";
+    static final String MOBLY_TEST_MODULE = "MOBLY_TEST_MODULE";
     static final String NATIVE_SERVER_PROCESS_NAME = "native_server_process_name";
     static final String PASSTHROUGH_MODE = "passthrough_mode";
     static final String PRECONDITION_HWBINDER_SERVICE = "precondition_hwbinder_service";
     static final String PRECONDITION_FEATURE = "precondition_feature";
     static final String PRECONDITION_FILE_PATH_PREFIX = "precondition_file_path_prefix";
+    static final String PRECONDITION_FIRST_API_LEVEL = "precondition_first_api_level";
     static final String PRECONDITION_LSHAL = "precondition_lshal";
+    static final String PRECONDITION_SYSPROP = "precondition_sysprop";
     static final String PRECONDITION_VINTF = "precondition_vintf";
     static final String ENABLE_SYSTRACE = "enable_systrace";
     static final String HAL_HIDL_REPLAY_TEST_TRACE_PATHS = "hal_hidl_replay_test_trace_paths";
@@ -136,22 +149,24 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     static final String TEMPLATE_BINARY_TEST_PATH = "vts/testcases/template/binary_test/binary_test";
     static final String TEMPLATE_GTEST_BINARY_TEST_PATH = "vts/testcases/template/gtest_binary_test/gtest_binary_test";
     static final String TEMPLATE_LLVMFUZZER_TEST_PATH = "vts/testcases/template/llvmfuzzer_test/llvmfuzzer_test";
+    static final String TEMPLATE_MOBLY_TEST_PATH = "vts/testcases/template/mobly/mobly_test";
     static final String TEMPLATE_HAL_HIDL_GTEST_PATH = "vts/testcases/template/hal_hidl_gtest/hal_hidl_gtest";
     static final String TEMPLATE_HAL_HIDL_REPLAY_TEST_PATH = "vts/testcases/template/hal_hidl_replay_test/hal_hidl_replay_test";
     static final String TEMPLATE_HOST_BINARY_TEST_PATH = "vts/testcases/template/host_binary_test/host_binary_test";
     static final long TEST_ABORT_TIMEOUT_MSECS = 1000 * 15;
     static final String TEST_RUN_SUMMARY_FILE_NAME = "test_run_summary.json";
     static final float DEFAULT_TARGET_VERSION = -1;
-    static final String DEFAULT_TESTCASE_CONFIG_PATH = "vts/tools/vts-tradefed/res/default/DefaultTestCase.config";
+    static final String DEFAULT_TESTCASE_CONFIG_PATH =
+            "vts/tools/vts-tradefed/res/default/DefaultTestCase.runner_conf";
 
     private ITestDevice mDevice = null;
     private IAbi mAbi = null;
 
     @Option(name = "test-timeout",
             description = "The amount of time (in milliseconds) for a test invocation. "
-                    + "If the test cannot finish before timeout, it should interrupt itself and "
-                    + "clean up in " + TEST_ABORT_TIMEOUT_MSECS + "ms. Hence the actual timeout "
-                    + "is the specified value + " + TEST_ABORT_TIMEOUT_MSECS + "ms.",
+                    + "If the test cannot finish before timeout, it is interrupted and cleans up "
+                    + "in " + TEST_ABORT_TIMEOUT_MSECS + "ms. Hence the actual timeout is the "
+                    + "specified value + " + TEST_ABORT_TIMEOUT_MSECS + "ms.",
             isTimeVal = true)
     private long mTestTimeout = 1000 * 60 * 60 * 3;
 
@@ -166,9 +181,6 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     @Option(name = "test-case-path-type",
             description = "The type of test case path ('module' by default or 'file').")
     private String mTestCasePathType = null;
-
-    @Option(name = "python-version", description = "The version of a Python interpreter to use.")
-    private String mPythonVersion = "";
 
     @Option(name = "test-config-path",
             description = "The path for test case config file.")
@@ -192,9 +204,18 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
                     + "    <source>: absolute path of file prefix on device")
     private Collection<String> mPreconditionFilePathPrefix = new ArrayList<>();
 
+    @Option(name = "precondition-first-api-level",
+            description = "The lowest first API level required to run the test.")
+    private int mPreconditionFirstApiLevel = 0;
+
     @Option(name = "precondition-lshal",
         description = "The name of a `lshal`-listable feature needed to run the test.")
     private String mPreconditionLshal = null;
+
+    @Option(name = "precondition-sysprop",
+            description = "The name=value for a system property configuration that needs "
+                    + "to be met to run the test.")
+    private String mPreconditionSysProp = null;
 
     @Option(name = "precondition-vintf",
             description = "The full name of a HAL specified in vendor/manifest.xml and "
@@ -277,6 +298,10 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
             description = "Whether to skip tests if target device suffers from thermal throttling.")
     private boolean mSkipIfThermalThrottling = false;
 
+    @Option(name = "disable-cpu-frequency-scaling",
+            description = "Whether to disable cpu frequency scaling for test.")
+    private boolean mDisableCpuFrequencyScaling = true;
+
     @Option(name = "run-32bit-on-64bit-abi",
             description = "Whether to run 32bit tests on 64bit ABI.")
     private boolean mRun32bBitOn64BitAbi = false;
@@ -349,18 +374,34 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
             + "specified, default directories will be used for files with different tags.")
     private Collection<String> mBinaryTestProfilingLibraryPath = new ArrayList<>();
 
-    @Option(name = "binary-test-disable-framework", description = "Adb stop/start before/after test.")
+    @Deprecated
+    @Option(name = "binary-test-disable-framework",
+            description = "Adb stop/start before/after test.")
     private boolean mBinaryTestDisableFramework = false;
 
+    @Deprecated
     @Option(name = "binary-test-stop-native-servers",
             description = "Set to stop all properly configured native servers during the testing.")
     private boolean mBinaryTestStopNativeServers = false;
 
+    @Option(name = "disable-framework", description = "Adb stop/start before/after test.")
+    private boolean mDisableFramework = false;
+
+    @Option(name = "stop-native-servers",
+            description = "Set to stop all properly configured native servers during the testing.")
+    private boolean mStopNativeServers = false;
+
     @Option(name = "bug-report-on-failure",
             description = "To catch bugreport zip file at the end of failed test cases. "
-                    + "If set to true, a report will be caught through adh shell command at the end of each failed "
-                    + "test cases.")
+                    + "If set to true, a report will be caught through adh shell command at the "
+                    + "end of each failed test cases.")
     private boolean mBugReportOnFailure = false;
+
+    @Option(name = "logcat-on-failure",
+            description = "To catch logcat from each buffers at the end of failed test cases. "
+                    + "If set to true, a report will be caught through adh shell command at the "
+                    + "end of each failed test cases.")
+    private boolean mLogcatOnFailure = true;
 
     @Option(name = "native-server-process-name",
             description = "Name of a native server process. The runner checks to make sure "
@@ -382,9 +423,8 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     private String mSystraceProcessName = null;
 
     @Option(name = "collect-tests-only",
-            description = "Only invoke the test binary to collect list of applicable test cases. "
-                    + "All test run callbacks will be triggered, but test execution will "
-                    + "not be actually carried out.")
+            description = "Only invoke setUpClass, generate*, and tearDownClass to collect list "
+                    + "of applicable test cases. All collected tests pass without being executed.")
     private boolean mCollectTestsOnly = false;
 
     @Option(name = "gtest-batch-mode", description = "Run Gtest binaries in batch mode.")
@@ -393,15 +433,6 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     @Option(name = "log-severity", description = "Set the log severity level.")
     private String mLogSeverity = "INFO";
 
-    // This variable is set in order to include the directory that contains the
-    // python test cases. This is set before calling the method.
-    // {@link #doRunTest(IRunUtil, String, String)}.
-    public String mPythonPath = null;
-
-    @Option(name = "python-binary", description = "python binary to use "
-            + "(optional)")
-    private String mPythonBin = null;
-
     @Option(name = "run-as-vts-self-test",
             description = "Run the module as vts-selftest. "
                     + "When the value is set to true, only setUpClass and tearDownClass function "
@@ -409,26 +440,73 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
                     + "Note that exception in tearDownClass will not be reported as failure.")
     private boolean mRunAsVtsSelfTest = false;
 
-    private IRunUtil mRunUtil = null;
+    @Option(name = "exclude-coverage-path",
+            description = "The coverage path that should be excluded in results. "
+                    + "Used only when enable-coverage is true.")
+    private Collection<String> mExcludeCoveragePath = new ArrayList<>();
+
+    @Option(name = "mobly-test-module",
+            description = "Mobly test module name. "
+                    + "If this value is specified, VTS will use mobly test template "
+                    + "with the configurations."
+                    + "Multiple values can be added by repeatly using this option.")
+    private Collection<String> mMoblyTestModule = new ArrayList<>();
+
+    @Option(name = "acts-test-module",
+            description = "Acts test module name. "
+                    + "If this value is specified, VTS will use acts test adapter "
+                    + "with the configurations."
+                    + "Multiple values can be added by repeatly using this option.")
+    private String mActsTestModule = null;
+
+    @Option(name = "config-str",
+            description = "Key-value map of custom config string. "
+                    + "The map will be passed directly to python runner and test module. "
+                    + "Only one value per key is stored."
+                    + "If the value for the same key is set multiple times, only the last value is "
+                    + "used.")
+    private TreeMap<String, String> mConfigStr = new TreeMap<>();
+
+    @Option(name = "config-int",
+            description = "Key-value map of custom config integer. "
+                    + "The map will be passed directly to python runner and test module. "
+                    + "Only one value per key is stored."
+                    + "If the value for the same key is set multiple times, only the last value is "
+                    + "used.")
+    private TreeMap<String, Integer> mConfigInt = new TreeMap<>();
+
+    @Option(name = "config-bool",
+            description = "Key-value map of custom config boolean. "
+                    + "The map will be passed directly to python runner and test module. "
+                    + "Only one value per key is stored."
+                    + "If the value for the same key is set multiple times, only the last value is "
+                    + "used.")
+    private TreeMap<String, Boolean> mConfigBool = new TreeMap<>();
+
     private IBuildInfo mBuildInfo = null;
     private String mRunName = "VtsHostDrivenTest";
     // the path of a dir which contains the test data files.
     private String mTestCaseDataDir = "./";
 
     private VtsVendorConfigFileUtil configReader = null;
+    private IInvocationContext mInvocationContext = null;
+    private OutputUtil mOutputUtil = null;
 
     /**
-     * @return the mRunUtil
+     * {@inheritDoc}
      */
-    public IRunUtil getRunUtil() {
-        return mRunUtil;
+    @Override
+    public void setInvocationContext(IInvocationContext context) {
+        mInvocationContext = context;
+        setDevice(context.getDevices().get(0));
+        setBuild(context.getBuildInfos().get(0));
     }
 
     /**
-     * @param mRunUtil the mRunUtil to set
+     * @return the mInvocationContext
      */
-    public void setRunUtil(IRunUtil mRunUtil) {
-        this.mRunUtil = mRunUtil;
+    public IInvocationContext getInvocationContext() {
+        return mInvocationContext;
     }
 
     /**
@@ -516,6 +594,29 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     }
 
     /**
+     * Generate a device json object from ITestDevice object.
+     *
+     * @param device device object
+     * @throws RuntimeException
+     * @throws JSONException
+     */
+    private JSONObject generateJsonDeviceItem(ITestDevice device) throws JSONException {
+        JSONObject deviceItemObject = new JSONObject();
+        deviceItemObject.put(SERIAL, device.getSerialNumber());
+        try {
+            deviceItemObject.put("product_type", device.getProductType());
+            deviceItemObject.put("product_variant", device.getProductVariant());
+            deviceItemObject.put("build_alias", device.getBuildAlias());
+            deviceItemObject.put("build_id", device.getBuildId());
+            deviceItemObject.put("build_flavor", device.getBuildFlavor());
+        } catch (DeviceNotAvailableException e) {
+            CLog.e("Device %s not available.", device.getSerialNumber());
+            throw new RuntimeException("Failed to get device information");
+        }
+        return deviceItemObject;
+    }
+
+    /**
      * {@inheritDoc}
      */
     @SuppressWarnings("deprecation")
@@ -523,7 +624,17 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     public void run(ITestInvocationListener listener)
             throws IllegalArgumentException, DeviceNotAvailableException {
         if (mDevice == null) {
-            throw new DeviceNotAvailableException("Device has not been set");
+            throw new DeviceNotAvailableException("Device has not been set.");
+        }
+
+        if (mBuildInfo == null) {
+            throw new RuntimeException("BuildInfo has not been set.");
+        }
+
+        mOutputUtil = new OutputUtil(listener);
+        mOutputUtil.setTestModuleName(mTestModuleName);
+        if (mAbi != null) {
+            mOutputUtil.setAbiName(mAbi.getName());
         }
 
         if (mTestCasePath == null) {
@@ -542,7 +653,7 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
                     default:
                         template = TEMPLATE_BINARY_TEST_PATH;
                 }
-                CLog.i("Using default test case template at %s.", template);
+                CLog.d("Using default test case template at %s.", template);
                 setTestCasePath(template);
                 if (mEnableCoverage && !mGlobalCoverage) {
                     CLog.e("Only global coverage is supported for test type %s.", mBinaryTestType);
@@ -553,20 +664,13 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
             } else if (mBinaryTestType.equals(BINARY_TEST_TYPE_LLVMFUZZER)) {
                 // Fuzz test don't need test-case-path.
                 setTestCasePath(TEMPLATE_LLVMFUZZER_TEST_PATH);
+            } else if (!mMoblyTestModule.isEmpty()) {
+                setTestCasePath(TEMPLATE_MOBLY_TEST_PATH);
+            } else if (mActsTestModule != null) {
+                setTestCasePath(ADAPTER_ACTS_PATH);
             } else {
                 throw new IllegalArgumentException("test-case-path is not set.");
             }
-        }
-
-        setPythonPath();
-
-        if (mPythonBin == null) {
-            mPythonBin = getPythonBinary();
-        }
-
-        if (mRunUtil == null){
-            mRunUtil = new RunUtil();
-            mRunUtil.setEnvVariable(PYTHONPATH, mPythonPath);
         }
 
         doRunTest(listener);
@@ -593,7 +697,7 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
      */
     private void populateDefaultJsonFields(JSONObject jsonObject, String testCaseDataDir)
             throws IOException, JSONException {
-        CLog.i("Populating default fields to json object from %s", DEFAULT_TESTCASE_CONFIG_PATH);
+        CLog.d("Populating default fields to json object from %s", DEFAULT_TESTCASE_CONFIG_PATH);
         String content = FileUtil.readStringFromFile(new File(mTestCaseDataDir, DEFAULT_TESTCASE_CONFIG_PATH));
         JSONObject defaultJsonObject = new JSONObject(content);
 
@@ -611,7 +715,7 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
      * @param log_path the path of a directory to store the VTS runner logs.
      * @return the updated JSONObject as the new test config.
      */
-    private void updateVtsRunnerTestConfig(JSONObject jsonObject)
+    protected void updateVtsRunnerTestConfig(JSONObject jsonObject)
             throws IOException, JSONException, RuntimeException {
         configReader = new VtsVendorConfigFileUtil();
         if (configReader.LoadVendorConfig(mBuildInfo)) {
@@ -621,51 +725,61 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
             }
         }
 
-        CLog.i("Load original test config %s %s", mTestCaseDataDir, mTestConfigPath);
+        CLog.d("Load original test config %s %s", mTestCaseDataDir, mTestConfigPath);
         String content = null;
 
         if (mTestConfigPath != null) {
             content = FileUtil.readStringFromFile(
                     new File(Paths.get(mTestCaseDataDir, mTestConfigPath).toString()));
-            CLog.i("Loaded original test config %s", content);
+            CLog.d("Loaded original test config %s", content);
             if (content != null) {
                 JsonUtil.deepMergeJsonObjects(jsonObject, new JSONObject(content));
             }
         }
 
         populateDefaultJsonFields(jsonObject, mTestCaseDataDir);
-        CLog.i("Built a Json object using the loaded original test config");
+        CLog.d("Built a Json object using the loaded original test config");
 
         JSONArray deviceArray = new JSONArray();
-        JSONObject deviceItemObject = new JSONObject();
-        deviceItemObject.put(SERIAL, mDevice.getSerialNumber());
 
         boolean coverageBuild = false;
         boolean sancovBuild = false;
 
-        try {
-            deviceItemObject.put("product_type", mDevice.getProductType());
-            deviceItemObject.put("product_variant", mDevice.getProductVariant());
-            deviceItemObject.put("build_alias", mDevice.getBuildAlias());
-            deviceItemObject.put("build_id", mDevice.getBuildId());
-            deviceItemObject.put("build_flavor", mDevice.getBuildFlavor());
+        boolean first_device = true;
+        for (ITestDevice device : mInvocationContext.getDevices()) {
+            JSONObject deviceJson = generateJsonDeviceItem(device);
+            try {
+                String coverageProperty = device.getProperty(COVERAGE_PROPERTY);
+                boolean enable_coverage_for_device =
+                        coverageProperty != null && coverageProperty.equals("1");
+                if (first_device) {
+                    coverageBuild = enable_coverage_for_device;
+                    first_device = false;
+                } else {
+                    if (coverageBuild && (!enable_coverage_for_device)) {
+                        CLog.e("Device %s is not coverage build while others are.",
+                                device.getSerialNumber());
+                        throw new RuntimeException("Device build not the same.");
+                    }
+                }
+            } catch (DeviceNotAvailableException e) {
+                CLog.e("Device %s not available.", device.getSerialNumber());
+                throw new RuntimeException("Failed to get device information");
+            }
 
             File sancovDir =
-                    mBuildInfo.getFile(VtsCoveragePreparer.getSancovResourceDirKey(mDevice));
+                    mBuildInfo.getFile(VtsCoveragePreparer.getSancovResourceDirKey(device));
             if (sancovDir != null) {
-                deviceItemObject.put("sancov_resources_path", sancovDir.getAbsolutePath());
+                deviceJson.put("sancov_resources_path", sancovDir.getAbsolutePath());
                 sancovBuild = true;
             }
-            File gcovDir = mBuildInfo.getFile(VtsCoveragePreparer.getGcovResourceDirKey(mDevice));
+            File gcovDir = mBuildInfo.getFile(VtsCoveragePreparer.getGcovResourceDirKey(device));
             if (gcovDir != null) {
-                deviceItemObject.put("gcov_resources_path", gcovDir.getAbsolutePath());
+                deviceJson.put("gcov_resources_path", gcovDir.getAbsolutePath());
                 coverageBuild = true;
             }
-        } catch (DeviceNotAvailableException e) {
-            CLog.e("A device not available - continuing");
-            throw new RuntimeException("Failed to get device information");
+            deviceArray.put(deviceJson);
         }
-        deviceArray.put(deviceItemObject);
 
         JSONArray testBedArray = (JSONArray) jsonObject.get(TEST_BED);
         if (testBedArray.length() == 0) {
@@ -685,7 +799,7 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
                         "Failed to derive test module name; use --test-module-name option");
                 }
             }
-            CLog.logAndDisplay(LogLevel.INFO, "Setting test name as %s", testName);
+            CLog.d("Setting test module name as %s", testName);
             testBedItemObject.put(NAME, testName);
             testBedItemObject.put(ANDROIDDEVICE, deviceArray);
             testBedArray.put(testBedItemObject);
@@ -712,31 +826,36 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
             throw new RuntimeException("Failed to produce VTS runner test config");
         }
         jsonObject.put(DATA_FILE_PATH, mTestCaseDataDir);
-        CLog.i("Added %s = %s to the Json object", DATA_FILE_PATH, mTestCaseDataDir);
+        CLog.d("Added %s = %s to the Json object", DATA_FILE_PATH, mTestCaseDataDir);
 
         JSONObject build = new JSONObject();
         build.put(BUILD_ID, mBuildInfo.getBuildId());
         build.put(BUILD_TARGET, mBuildInfo.getBuildTargetName());
         jsonObject.put(BUILD, build);
-        CLog.i("Added %s to the Json object", BUILD);
+        CLog.d("Added %s to the Json object", BUILD);
 
         JSONObject suite = new JSONObject();
         suite.put(NAME, mBuildInfo.getTestTag());
         suite.put(INCLUDE_FILTER, new JSONArray(mIncludeFilters));
-        CLog.i("Added include filter to test suite: %s", mIncludeFilters);
+        CLog.d("Added include filter to test suite: %s", mIncludeFilters);
         suite.put(EXCLUDE_FILTER, new JSONArray(mExcludeFilters));
-        CLog.i("Added exclude filter to test suite: %s", mExcludeFilters);
+        CLog.d("Added exclude filter to test suite: %s", mExcludeFilters);
+
+        String coverageReportPath = mBuildInfo.getBuildAttributes().get("coverage_report_path");
+        if (coverageReportPath != null) {
+            jsonObject.put(OUTPUT_COVERAGE_REPORT, true);
+            CLog.d("Added %s to the Json object", OUTPUT_COVERAGE_REPORT);
+            jsonObject.put(COVERAGE_REPORT_PATH, coverageReportPath);
+            CLog.d("Added %s to the Json object", COVERAGE_REPORT_PATH);
+        }
 
         if (mExcludeOverInclude) {
             jsonObject.put(EXCLUDE_OVER_INCLUDE, mExcludeOverInclude);
-            CLog.i("Added %s to the Json object", EXCLUDE_OVER_INCLUDE);
+            CLog.d("Added %s to the Json object", EXCLUDE_OVER_INCLUDE);
         }
 
         jsonObject.put(TEST_SUITE, suite);
-        CLog.i("Added %s to the Json object", TEST_SUITE);
-
-        jsonObject.put(TEST_MAX_TIMEOUT, mTestTimeout);
-        CLog.i("Added %s to the Json object: %d", TEST_MAX_TIMEOUT, mTestTimeout);
+        CLog.d("Added %s to the Json object", TEST_SUITE);
 
         if (!mLogSeverity.isEmpty()) {
             String logSeverity = mLogSeverity.toUpperCase();
@@ -748,191 +867,260 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
                 logSeverity = "INFO";
             }
             jsonObject.put(LOG_SEVERITY, logSeverity);
-            CLog.i("Added %s to the Json object: %s", LOG_SEVERITY, logSeverity);
+            CLog.d("Added %s to the Json object: %s", LOG_SEVERITY, logSeverity);
         }
 
         if (mAbi != null) {
             jsonObject.put(ABI_NAME, mAbi.getName());
-            CLog.i("Added %s to the Json object", ABI_NAME);
+            CLog.d("Added %s to the Json object", ABI_NAME);
             jsonObject.put(ABI_BITNESS, mAbi.getBitness());
-            CLog.i("Added %s to the Json object", ABI_BITNESS);
+            CLog.d("Added %s to the Json object", ABI_BITNESS);
         }
 
         if (mSkipOn32BitAbi) {
             jsonObject.put(SKIP_ON_32BIT_ABI, mSkipOn32BitAbi);
-            CLog.i("Added %s to the Json object", SKIP_ON_32BIT_ABI);
+            CLog.d("Added %s to the Json object", SKIP_ON_32BIT_ABI);
         }
 
         if (mSkipOn64BitAbi) {
             jsonObject.put(SKIP_ON_64BIT_ABI, mSkipOn64BitAbi);
-            CLog.i("Added %s to the Json object", SKIP_ON_64BIT_ABI);
+            CLog.d("Added %s to the Json object", SKIP_ON_64BIT_ABI);
         } else if (mRun32bBitOn64BitAbi) {
             jsonObject.put(RUN_32BIT_ON_64BIT_ABI, mRun32bBitOn64BitAbi);
-            CLog.i("Added %s to the Json object", RUN_32BIT_ON_64BIT_ABI);
+            CLog.d("Added %s to the Json object", RUN_32BIT_ON_64BIT_ABI);
         }
 
         if (mSkipIfThermalThrottling) {
             jsonObject.put(SKIP_IF_THERMAL_THROTTLING, mSkipIfThermalThrottling);
-            CLog.i("Added %s to the Json object", SKIP_IF_THERMAL_THROTTLING);
+            CLog.d("Added %s to the Json object", SKIP_IF_THERMAL_THROTTLING);
         }
+
+        jsonObject.put(DISABLE_CPU_FREQUENCY_SCALING, mDisableCpuFrequencyScaling);
+        CLog.d("Added %s to the Json object, value: %s", DISABLE_CPU_FREQUENCY_SCALING,
+                mDisableCpuFrequencyScaling);
 
         if (!mBinaryTestSource.isEmpty()) {
             jsonObject.put(BINARY_TEST_SOURCE, new JSONArray(mBinaryTestSource));
-            CLog.i("Added %s to the Json object", BINARY_TEST_SOURCE);
+            CLog.d("Added %s to the Json object", BINARY_TEST_SOURCE);
         }
 
         if (!mBinaryTestWorkingDirectory.isEmpty()) {
             jsonObject.put(BINARY_TEST_WORKING_DIRECTORY,
                     new JSONArray(mBinaryTestWorkingDirectory));
-            CLog.i("Added %s to the Json object", BINARY_TEST_WORKING_DIRECTORY);
+            CLog.d("Added %s to the Json object", BINARY_TEST_WORKING_DIRECTORY);
         }
 
         if (!mBinaryTestEnvp.isEmpty()) {
             jsonObject.put(BINARY_TEST_ENVP, new JSONArray(mBinaryTestEnvp));
-            CLog.i("Added %s to the Json object", BINARY_TEST_ENVP);
+            CLog.d("Added %s to the Json object", BINARY_TEST_ENVP);
         }
 
         if (!mBinaryTestArgs.isEmpty()) {
             jsonObject.put(BINARY_TEST_ARGS, new JSONArray(mBinaryTestArgs));
-            CLog.i("Added %s to the Json object", BINARY_TEST_ARGS);
+            CLog.d("Added %s to the Json object", BINARY_TEST_ARGS);
         }
 
         if (!mBinaryTestLdLibraryPath.isEmpty()) {
             jsonObject.put(BINARY_TEST_LD_LIBRARY_PATH,
                     new JSONArray(mBinaryTestLdLibraryPath));
-            CLog.i("Added %s to the Json object", BINARY_TEST_LD_LIBRARY_PATH);
+            CLog.d("Added %s to the Json object", BINARY_TEST_LD_LIBRARY_PATH);
         }
 
         if (mBugReportOnFailure) {
             jsonObject.put(BUG_REPORT_ON_FAILURE, mBugReportOnFailure);
-            CLog.i("Added %s to the Json object", BUG_REPORT_ON_FAILURE);
+            CLog.d("Added %s to the Json object", BUG_REPORT_ON_FAILURE);
+        }
+
+        if (!mLogcatOnFailure) {
+            jsonObject.put(LOGCAT_ON_FAILURE, mLogcatOnFailure);
+            CLog.d("Added %s to the Json object", LOGCAT_ON_FAILURE);
         }
 
         if (mEnableProfiling) {
             jsonObject.put(ENABLE_PROFILING, mEnableProfiling);
-            CLog.i("Added %s to the Json object", ENABLE_PROFILING);
+            CLog.d("Added %s to the Json object", ENABLE_PROFILING);
         }
 
         if (mSaveTraceFileRemote) {
             jsonObject.put(SAVE_TRACE_FIEL_REMOTE, mSaveTraceFileRemote);
-            CLog.i("Added %s to the Json object", SAVE_TRACE_FIEL_REMOTE);
+            CLog.d("Added %s to the Json object", SAVE_TRACE_FIEL_REMOTE);
         }
 
         if (mEnableSystrace) {
             jsonObject.put(ENABLE_SYSTRACE, mEnableSystrace);
-            CLog.i("Added %s to the Json object", ENABLE_SYSTRACE);
+            CLog.d("Added %s to the Json object", ENABLE_SYSTRACE);
         }
 
         if (mEnableCoverage) {
             jsonObject.put(GLOBAL_COVERAGE, mGlobalCoverage);
+            if (!mExcludeCoveragePath.isEmpty()) {
+                jsonObject.put(EXCLUDE_COVERAGE_PATH, new JSONArray(mExcludeCoveragePath));
+                CLog.d("Added %s to the Json object", EXCLUDE_COVERAGE_PATH);
+            }
             if (coverageBuild) {
                 jsonObject.put(ENABLE_COVERAGE, mEnableCoverage);
-                CLog.i("Added %s to the Json object", ENABLE_COVERAGE);
+                CLog.d("Added %s to the Json object", ENABLE_COVERAGE);
             } else {
-                CLog.i("Device build has coverage disabled");
+                CLog.d("Device build has coverage disabled");
             }
         }
 
         if (mEnableSancov) {
             if (sancovBuild) {
                 jsonObject.put(ENABLE_SANCOV, mEnableSancov);
-                CLog.i("Added %s to the Json object", ENABLE_SANCOV);
+                CLog.d("Added %s to the Json object", ENABLE_SANCOV);
             } else {
-                CLog.i("Device build has sancov disabled");
+                CLog.d("Device build has sancov disabled");
             }
-        }
-
-        if (mOutputCoverageReport) {
-            jsonObject.put(OUTPUT_COVERAGE_REPORT, mOutputCoverageReport);
-            CLog.i("Added %s to the Json object", OUTPUT_COVERAGE_REPORT);
         }
 
         if (mPreconditionHwBinderServiceName != null) {
             jsonObject.put(PRECONDITION_HWBINDER_SERVICE, mPreconditionHwBinderServiceName);
-            CLog.i("Added %s to the Json object", PRECONDITION_HWBINDER_SERVICE);
+            CLog.d("Added %s to the Json object", PRECONDITION_HWBINDER_SERVICE);
         }
 
         if (mPreconditionFeature != null) {
             jsonObject.put(PRECONDITION_FEATURE, mPreconditionFeature);
-            CLog.i("Added %s to the Json object", PRECONDITION_FEATURE);
+            CLog.d("Added %s to the Json object", PRECONDITION_FEATURE);
         }
 
         if (!mPreconditionFilePathPrefix.isEmpty()) {
             jsonObject.put(
                     PRECONDITION_FILE_PATH_PREFIX, new JSONArray(mPreconditionFilePathPrefix));
-            CLog.i("Added %s to the Json object", PRECONDITION_FILE_PATH_PREFIX);
+            CLog.d("Added %s to the Json object", PRECONDITION_FILE_PATH_PREFIX);
+        }
+
+        if (mPreconditionFirstApiLevel != 0) {
+            jsonObject.put(PRECONDITION_FIRST_API_LEVEL, mPreconditionFirstApiLevel);
+            CLog.d("Added %s to the Json object", PRECONDITION_FIRST_API_LEVEL);
         }
 
         if (mPreconditionLshal != null) {
             jsonObject.put(PRECONDITION_LSHAL, mPreconditionLshal);
-            CLog.i("Added %s to the Json object", PRECONDITION_LSHAL);
+            CLog.d("Added %s to the Json object", PRECONDITION_LSHAL);
         }
 
         if (mPreconditionVintf != null) {
             jsonObject.put(PRECONDITION_VINTF, mPreconditionVintf);
-            CLog.i("Added %s to the Json object", PRECONDITION_VINTF);
+            CLog.d("Added %s to the Json object", PRECONDITION_VINTF);
+        }
+
+        if (mPreconditionSysProp != null) {
+            jsonObject.put(PRECONDITION_SYSPROP, mPreconditionSysProp);
+            CLog.d("Added %s to the Json object", PRECONDITION_SYSPROP);
         }
 
         if (!mBinaryTestProfilingLibraryPath.isEmpty()) {
             jsonObject.put(BINARY_TEST_PROFILING_LIBRARY_PATH,
                     new JSONArray(mBinaryTestProfilingLibraryPath));
-            CLog.i("Added %s to the Json object", BINARY_TEST_PROFILING_LIBRARY_PATH);
+            CLog.d("Added %s to the Json object", BINARY_TEST_PROFILING_LIBRARY_PATH);
+        }
+
+        if (mDisableFramework) {
+            jsonObject.put(DISABLE_FRAMEWORK, mDisableFramework);
+            CLog.d("Added %s to the Json object", DISABLE_FRAMEWORK);
+        }
+
+        if (mStopNativeServers) {
+            jsonObject.put(STOP_NATIVE_SERVERS, mStopNativeServers);
+            CLog.d("Added %s to the Json object", STOP_NATIVE_SERVERS);
         }
 
         if (mBinaryTestDisableFramework) {
             jsonObject.put(BINARY_TEST_DISABLE_FRAMEWORK, mBinaryTestDisableFramework);
-            CLog.i("Added %s to the Json object", BINARY_TEST_DISABLE_FRAMEWORK);
+            CLog.d("Added %s to the Json object", BINARY_TEST_DISABLE_FRAMEWORK);
         }
 
         if (mBinaryTestStopNativeServers) {
             jsonObject.put(BINARY_TEST_STOP_NATIVE_SERVERS, mBinaryTestStopNativeServers);
-            CLog.i("Added %s to the Json object", BINARY_TEST_STOP_NATIVE_SERVERS);
+            CLog.d("Added %s to the Json object", BINARY_TEST_STOP_NATIVE_SERVERS);
         }
 
         if (!mNativeServerProcessName.isEmpty()) {
             jsonObject.put(NATIVE_SERVER_PROCESS_NAME, new JSONArray(mNativeServerProcessName));
-            CLog.i("Added %s to the Json object", NATIVE_SERVER_PROCESS_NAME);
+            CLog.d("Added %s to the Json object", NATIVE_SERVER_PROCESS_NAME);
         }
 
         if (!mHalHidlReplayTestTracePaths.isEmpty()) {
             jsonObject.put(HAL_HIDL_REPLAY_TEST_TRACE_PATHS,
                     new JSONArray(mHalHidlReplayTestTracePaths));
-            CLog.i("Added %s to the Json object", HAL_HIDL_REPLAY_TEST_TRACE_PATHS);
+            CLog.d("Added %s to the Json object", HAL_HIDL_REPLAY_TEST_TRACE_PATHS);
         }
 
         if (mHalHidlPackageName != null) {
             jsonObject.put(HAL_HIDL_PACKAGE_NAME, mHalHidlPackageName);
-            CLog.i("Added %s to the Json object", SYSTRACE_PROCESS_NAME);
+            CLog.d("Added %s to the Json object", SYSTRACE_PROCESS_NAME);
         }
 
         if (mSystraceProcessName != null) {
             jsonObject.put(SYSTRACE_PROCESS_NAME, mSystraceProcessName);
-            CLog.i("Added %s to the Json object", SYSTRACE_PROCESS_NAME);
+            CLog.d("Added %s to the Json object", SYSTRACE_PROCESS_NAME);
         }
 
         if (mPassthroughMode) {
             jsonObject.put(PASSTHROUGH_MODE, mPassthroughMode);
-            CLog.i("Added %s to the Json object", PASSTHROUGH_MODE);
+            CLog.d("Added %s to the Json object", PASSTHROUGH_MODE);
+        }
+
+        if (mCollectTestsOnly) {
+            jsonObject.put(COLLECT_TESTS_ONLY, mCollectTestsOnly);
+            CLog.d("Added %s to the Json object", COLLECT_TESTS_ONLY);
         }
 
         if (mGtestBatchMode) {
             jsonObject.put(GTEST_BATCH_MODE, mGtestBatchMode);
-            CLog.i("Added %s to the Json object", GTEST_BATCH_MODE);
+            CLog.d("Added %s to the Json object", GTEST_BATCH_MODE);
         }
 
         if (mLtpNumberOfThreads >= 0) {
             jsonObject.put(LTP_NUMBER_OF_THREADS, mLtpNumberOfThreads);
-            CLog.i("Added %s to the Json object", LTP_NUMBER_OF_THREADS);
+            CLog.d("Added %s to the Json object", LTP_NUMBER_OF_THREADS);
         }
 
         if (mRunAsVtsSelfTest) {
             jsonObject.put(RUN_AS_VTS_SELF_TEST, mRunAsVtsSelfTest);
-            CLog.i("Added %s to the Json object", RUN_AS_VTS_SELF_TEST);
+            CLog.d("Added %s to the Json object", RUN_AS_VTS_SELF_TEST);
         }
 
         if ("vts".equals(mBuildInfo.getTestTag())) {
             jsonObject.put(RUN_AS_COMPLIANCE_TEST, true);
-            CLog.i("Added %s to the Json object", RUN_AS_COMPLIANCE_TEST);
+            CLog.d("Added %s to the Json object", RUN_AS_COMPLIANCE_TEST);
+        }
+
+        if (!mMoblyTestModule.isEmpty()) {
+            jsonObject.put(MOBLY_TEST_MODULE, new JSONArray(mMoblyTestModule));
+            CLog.d("Added %s to the Json object", MOBLY_TEST_MODULE);
+        }
+
+        if (mActsTestModule != null) {
+            jsonObject.put(ACTS_TEST_MODULE, mActsTestModule);
+            CLog.d("Added %s to the Json object", ACTS_TEST_MODULE);
+        }
+
+        if (mBuildInfo.getFile(VtsPythonVirtualenvPreparer.VIRTUAL_ENV) != null) {
+            jsonObject.put(VtsPythonVirtualenvPreparer.VIRTUAL_ENV,
+                    mBuildInfo.getFile(VtsPythonVirtualenvPreparer.VIRTUAL_ENV).getAbsolutePath());
+        }
+
+        if (mBuildInfo.getFile(VtsPythonVirtualenvPreparer.VIRTUAL_ENV_V3) != null) {
+            jsonObject.put(VtsPythonVirtualenvPreparer.VIRTUAL_ENV_V3,
+                    mBuildInfo.getFile(VtsPythonVirtualenvPreparer.VIRTUAL_ENV_V3)
+                            .getAbsolutePath());
+        }
+
+        if (!mConfigStr.isEmpty()) {
+            jsonObject.put(CONFIG_STR, new JSONObject(mConfigStr));
+            CLog.d("Added %s to the Json object", CONFIG_STR);
+        }
+
+        if (!mConfigInt.isEmpty()) {
+            jsonObject.put(CONFIG_INT, new JSONObject(mConfigInt));
+            CLog.d("Added %s to the Json object", CONFIG_INT);
+        }
+
+        if (!mConfigBool.isEmpty()) {
+            jsonObject.put(CONFIG_BOOL, new JSONObject(mConfigBool));
+            CLog.d("Added %s to the Json object", CONFIG_BOOL);
         }
     }
 
@@ -961,77 +1149,20 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
         }
         File reportFile = mBuildInfo.getFile(TEST_PLAN_REPORT_FILE);
 
-        try (FileWriter fw = new FileWriter(reportFile.getAbsoluteFile(), true);
-                BufferedWriter bw = new BufferedWriter(fw); PrintWriter out = new PrintWriter(bw)) {
-            out.println(String.format("%s %s", test_module_name, test_module_timestamp));
-        } catch (IOException e) {
-            CLog.e(String.format(
-                    "Can't write to the test plan result file, %s", TEST_PLAN_REPORT_FILE));
-            return false;
+        if (reportFile != null) {
+            try (FileWriter fw = new FileWriter(reportFile.getAbsoluteFile(), true);
+                    BufferedWriter bw = new BufferedWriter(fw);
+                    PrintWriter out = new PrintWriter(bw)) {
+                out.println(String.format("%s %s", test_module_name, test_module_timestamp));
+            } catch (IOException e) {
+                CLog.e(String.format(
+                        "Can't write to the test plan result file, %s", TEST_PLAN_REPORT_FILE));
+                return false;
+            }
+        } else {
+            CLog.w("No test plan report file configured.");
         }
         return true;
-    }
-
-    /**
-     * Create a {@link ProcessHelper} from mRunUtil.
-     *
-     * @param cmd the command to run.
-     * @throws IOException if fails to start Process.
-     */
-    protected ProcessHelper createProcessHelper(String[] cmd) throws IOException {
-        return new ProcessHelper(mRunUtil.runCmdInBackground(cmd));
-    }
-
-    /**
-     * Run VTS Python runner and handle interrupt from TradeFed.
-     *
-     * @param cmd the command to start VTS Python runner.
-     * @param commandResult the object containing the command result.
-     * @return null if the command terminates or times out; a message string if the command is
-     * interrupted by TradeFed.
-     */
-    private String runPythonRunner(String[] cmd, CommandResult commandResult) {
-        ProcessHelper process;
-        try {
-            process = createProcessHelper(cmd);
-        } catch (IOException e) {
-            CLog.e(e);
-            commandResult.setStatus(CommandStatus.EXCEPTION);
-            commandResult.setStdout("");
-            commandResult.setStderr("");
-            return null;
-        }
-
-        String interruptMessage;
-        try {
-            CommandStatus commandStatus;
-            try {
-                commandStatus = process.waitForProcess(mTestTimeout);
-                interruptMessage = null;
-            } catch (RunInterruptedException e) {
-                CLog.e("Python process is interrupted.");
-                commandStatus = CommandStatus.TIMED_OUT;
-                interruptMessage = (e.getMessage() != null ? e.getMessage() : "");
-            }
-            if (process.isRunning()) {
-                CLog.e("Cancel Python process and wait %d seconds.",
-                        TEST_ABORT_TIMEOUT_MSECS / 1000);
-                try {
-                    process.closeStdin();
-                    // Wait for the process to clean up and ignore the CommandStatus.
-                    // Propagate RunInterruptedException if this is interrupted again.
-                    process.waitForProcess(TEST_ABORT_TIMEOUT_MSECS);
-                } catch (IOException e) {
-                    CLog.e("Fail to cancel Python process.");
-                }
-            }
-            commandResult.setStatus(commandStatus);
-        } finally {
-            process.cleanUp();
-        }
-        commandResult.setStdout(process.getStdout());
-        commandResult.setStderr(process.getStderr());
-        return interruptMessage;
     }
 
     /**
@@ -1043,7 +1174,9 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
      * @throws IllegalArgumentException
      */
     private void doRunTest(ITestRunListener listener) throws RuntimeException, IllegalArgumentException {
-        CLog.i("Device serial number: " + mDevice.getSerialNumber());
+        CLog.d("Device serial number: " + mDevice.getSerialNumber());
+
+        setTestCaseDataDir();
 
         JSONObject jsonObject = new JSONObject();
         File vtsRunnerLogDir = null;
@@ -1052,21 +1185,21 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
             updateVtsRunnerTestConfig(jsonObject);
 
             jsonObject.put(LOG_PATH,  vtsRunnerLogDir.getAbsolutePath());
-            CLog.i("Added %s to the Json object", LOG_PATH);
+            CLog.d("Added %s to the Json object", LOG_PATH);
         } catch(IOException e) {
             throw new RuntimeException("Failed to read test config json file");
         } catch(JSONException e) {
             throw new RuntimeException("Failed to build updated test config json data");
         }
 
-        CLog.i("config json: %s", jsonObject.toString());
+        CLog.d("config json: %s", jsonObject.toString());
 
         String jsonFilePath = null;
         try {
             File tmpFile = FileUtil.createTempFile(
                     mBuildInfo.getTestTag() + "-config-" + mBuildInfo.getDeviceSerial(), ".json");
             jsonFilePath = tmpFile.getAbsolutePath();
-            CLog.i("config json file path: %s", jsonFilePath);
+            CLog.d("config json file path: %s", jsonFilePath);
             FileWriter fw = new FileWriter(jsonFilePath);
             fw.write(jsonObject.toString());
             fw.close();
@@ -1074,48 +1207,41 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
             throw new RuntimeException("Failed to create device config json file");
         }
 
-        if (mPythonBin == null){
-            mPythonBin = getPythonBinary();
-        }
-        mRunUtil.setEnvVariable("VTS", "1");
-        String[] baseOpts = {
-                mPythonBin,
-        };
-        String[] testModule = new String[2];
-        String[] cmd;
+        VtsPythonRunnerHelper vtsPythonRunnerHelper = createVtsPythonRunnerHelper();
+
+        List<String> cmd = new ArrayList<>();
+        cmd.add("python");
         if (mTestCasePathType != null && mTestCasePathType.toLowerCase().equals("file")) {
-            testModule[0] = mTestCasePath;
-            if (!mTestCasePath.endsWith(".py")) {
-                testModule[0] += ".py";
+            String testScript = mTestCasePath;
+            if (!testScript.endsWith(".py")) {
+                testScript += ".py";
             }
+            cmd.add(testScript);
         } else {
-            baseOpts = new String[2];
-            baseOpts[0] = mPythonBin;
-            baseOpts[1] = "-m";
-            testModule[0] = mTestCasePath.replace("/", ".");
+            cmd.add("-m");
+            cmd.add(mTestCasePath.replace("/", "."));
         }
-        testModule[1] = jsonFilePath;
-        cmd = ArrayUtil.buildArray(baseOpts, testModule);
+        cmd.add(jsonFilePath);
 
         printToDeviceLogcatAboutTestModuleStatus("BEGIN");
 
         CommandResult commandResult = new CommandResult();
-        String interruptMessage = runPythonRunner(cmd, commandResult);
+        String interruptMessage = vtsPythonRunnerHelper.runPythonRunner(
+                cmd.toArray(new String[0]), commandResult, mTestTimeout);
 
         if (commandResult != null) {
             CommandStatus commandStatus = commandResult.getStatus();
             if (commandStatus != CommandStatus.SUCCESS
                 && commandStatus != CommandStatus.TIMED_OUT) {
                 CLog.e("Python process failed");
-                CLog.e("Python path: %s", mPythonPath);
-                CLog.e("Stderr: %s", commandResult.getStderr());
-                CLog.e("Stdout: %s", commandResult.getStdout());
-                printVtsLogs(vtsRunnerLogDir);
+                CLog.e("Command stdout: " + commandResult.getStdout());
+                CLog.e("Command stderr: " + commandResult.getStderr());
+                CLog.e("Command status: " + commandStatus);
+                CLog.e("Python log: ");
+                mOutputUtil.collectVtsRunnerOutputs(vtsRunnerLogDir);
                 printToDeviceLogcatAboutTestModuleStatus("ERROR");
                 throw new RuntimeException("Failed to run VTS test");
             }
-            CLog.i("Standard output is: %s", commandResult.getStdout());
-            CLog.i("Parsing test result: %s", commandResult.getStderr());
             printToDeviceLogcatAboutTestModuleStatus("END");
         }
 
@@ -1134,49 +1260,37 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
             JSONObject object = null;
             File testRunSummary = getFileTestRunSummary(vtsRunnerLogDir);
             if (testRunSummary == null) {
-                throw new RuntimeException("Couldn't locate the file : " +
-                        TEST_RUN_SUMMARY_FILE_NAME);
-            }
-            try {
-                jsonData = FileUtil.readStringFromFile(testRunSummary);
-                CLog.i("Test Result Summary: %s", jsonData);
-                object = new JSONObject(jsonData);
-            } catch (IOException e) {
-                CLog.e("Error occurred in parsing Json file : %s", testRunSummary.toPath());
-            } catch (JSONException e) {
-                CLog.e("Error occurred in parsing Json String : %s", jsonData);
-            }
-            if (object == null) {
-                CLog.e("Json object is null.");
-                throw new RuntimeException("Json object is null.");
-            }
-            parser.processJsonFile(object);
+                CLog.e("Couldn't locate the file : " + TEST_RUN_SUMMARY_FILE_NAME);
+            } else {
+                try {
+                    jsonData = FileUtil.readStringFromFile(testRunSummary);
+                    CLog.d("Test Result Summary: %s", jsonData);
+                    object = new JSONObject(jsonData);
+                } catch (IOException e) {
+                    CLog.e("Error occurred in parsing Json file : %s", testRunSummary.toPath());
+                } catch (JSONException e) {
+                    CLog.e("Error occurred in parsing Json String : %s", jsonData);
+                }
+                if (object == null) {
+                    CLog.e("Json object is null.");
+                    throw new RuntimeException("Json object is null.");
+                }
+                parser.processJsonFile(object);
 
-            try {
-                JSONObject planObject = object.getJSONObject(TESTMODULE);
-                String test_module_name = planObject.getString("Name");
-                long test_module_timestamp = planObject.getLong("Timestamp");
-                AddTestModuleKeys(test_module_name, test_module_timestamp);
-            } catch (JSONException e) {
-                CLog.d("Key '%s' not found in result json summary", TESTMODULE);
+                try {
+                    JSONObject planObject = object.getJSONObject(TESTMODULE);
+                    String test_module_name = planObject.getString("Name");
+                    long test_module_timestamp = planObject.getLong("Timestamp");
+                    AddTestModuleKeys(test_module_name, test_module_timestamp);
+                } catch (JSONException e) {
+                    CLog.d("Key '%s' not found in result json summary", TESTMODULE);
+                }
             }
         }
-        printVtsLogs(vtsRunnerLogDir);
+        mOutputUtil.collectVtsRunnerOutputs(vtsRunnerLogDir);
 
-        File reportMsg;
-        int waitCount = 0;
-        // Wait python process to finish for 3 minutes at most
-        while ((reportMsg = FileUtil.findFile(vtsRunnerLogDir, REPORT_MESSAGE_FILE_NAME)) == null
-                && waitCount < 180) {
-            try {
-                Thread.sleep(1000);
-            } catch (Exception e) {
-                System.out.println(e);
-            }
-            waitCount++;
-        }
-
-        CLog.i("Report message path: %s", reportMsg);
+        File reportMsg = FileUtil.findFile(vtsRunnerLogDir, REPORT_MESSAGE_FILE_NAME);
+        CLog.d("Report message path: %s", reportMsg);
 
         if (reportMsg == null) {
             CLog.e("Cannot find report message proto file.");
@@ -1185,14 +1299,14 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
             VtsDashboardUtil dashboardUtil = new VtsDashboardUtil(configReader);
             dashboardUtil.Upload(reportMsg.getAbsolutePath());
         } else {
-            CLog.i("Result uploading is not enabled.");
+            CLog.d("Result uploading is not enabled.");
         }
 
         FileUtil.recursiveDelete(vtsRunnerLogDir);
-        CLog.i("Deleted the runner log dir, %s.", vtsRunnerLogDir);
+        CLog.d("Deleted the runner log dir, %s.", vtsRunnerLogDir);
         if (jsonFilePath != null) {
           FileUtil.deleteFile(new File(jsonFilePath));
-          CLog.i("Deleted the runner json config file, %s.", jsonFilePath);
+          CLog.d("Deleted the runner json config file, %s.", jsonFilePath);
         }
 
         if (interruptMessage != null) {
@@ -1201,10 +1315,10 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     }
 
     /**
-     * This method return the file test_run_details.txt which is then used to parse logs.
+     * This method return the file test_run_summary.json which is then used to parse logs.
      *
      * @param logDir : The file that needs to be converted
-     * @return the file named test_run_details.txt
+     * @return the file named test_run_summary.json
      * @throws IllegalArgumentException
      */
     private File getFileTestRunSummary(File logDir) throws IllegalArgumentException {
@@ -1231,126 +1345,19 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     }
 
     /**
-     * The method prints all VTS runner log files
-     *
-     * @param logDir the File instance of the base log dir.
+     * Set the path for android-vts/testcases/ which keeps the VTS python code under vts.
      */
-    private void printVtsLogs(File logDir) {
-        File[] children;
-        if (logDir == null) {
-            CLog.e("Scan VTS log dir: null\n");
-            return;
+    private void setTestCaseDataDir() {
+        CompatibilityBuildHelper buildHelper = new CompatibilityBuildHelper(mBuildInfo);
+        File testDir = null;
+        try {
+            testDir = buildHelper.getTestsDir();
+        } catch (FileNotFoundException e) {
+            /* pass */
         }
-        CLog.i("Scan VTS log dir %s\n", logDir.getAbsolutePath());
-        children = logDir.listFiles();
-        if (children != null) {
-            for (File child : children) {
-                if (child.isDirectory()) {
-                    printVtsLogs(child);
-                } else {
-                    CLog.i("VTS log file %s\n", child.getAbsolutePath());
-                    try {
-                        if (child.getName().startsWith("vts_agent") &&
-                                child.getName().endsWith(".log")) {
-                            CLog.i("Content: %s\n", FileUtil.readStringFromFile(child));
-                        } else {
-                            CLog.i("skip %s\n", child.getName());
-                        }
-                    } catch (IOException e) {
-                        CLog.e("I/O error\n");
-                    }
-                }
-            }
+        if (testDir != null) {
+            mTestCaseDataDir = testDir.getAbsolutePath();
         }
-    }
-
-    /**
-     * This method returns whether the OS is Windows.
-     */
-    private static boolean isOnWindows() {
-        return System.getProperty(OS_NAME).contains(WINDOWS);
-    }
-
-    /**
-     * This method sets the python path. It's based on the
-     * assumption that the environment variable $ANDROID_BUILD_TOP is set.
-     */
-    private void setPythonPath() {
-        StringBuilder sb = new StringBuilder();
-        String separator = File.pathSeparator;
-        if (System.getenv(PYTHONPATH) != null) {
-            sb.append(separator);
-            sb.append(System.getenv(PYTHONPATH));
-        }
-
-        // to get the path for android-vts/testcases/ which keeps the VTS python code under vts.
-        if (mBuildInfo != null) {
-            CompatibilityBuildHelper mBuildHelper = new CompatibilityBuildHelper(mBuildInfo);
-
-            File testDir = null;
-            try {
-                testDir = mBuildHelper.getTestsDir();
-            } catch (FileNotFoundException e) {
-                /* pass */
-            }
-            if (testDir != null) {
-                sb.append(separator);
-                mTestCaseDataDir = testDir.getAbsolutePath();
-                sb.append(mTestCaseDataDir);
-            } else if (mBuildInfo.getFile(VTS) != null) {
-                sb.append(separator);
-                sb.append(mBuildInfo.getFile(VTS).getAbsolutePath()).append("/..");
-            }
-        }
-
-        // for when one uses PythonVirtualenvPreparer.
-        if (mBuildInfo.getFile(PYTHONPATH) != null) {
-            sb.append(separator);
-            sb.append(mBuildInfo.getFile(PYTHONPATH).getAbsolutePath());
-        }
-        if (System.getenv("ANDROID_BUILD_TOP") != null) {
-            sb.append(separator);
-            sb.append(System.getenv("ANDROID_BUILD_TOP")).append("/test");
-        }
-        if (sb.length() == 0) {
-            throw new RuntimeException("Could not find python path on host machine");
-        }
-        mPythonPath = sb.substring(1);
-        CLog.i("mPythonPath: %s", mPythonPath);
-    }
-
-    /**
-     * This method gets the python binary.
-     */
-    private String getPythonBinary() {
-        boolean isWindows = isOnWindows();
-        String python = (isWindows ? "python.exe" : "python" + mPythonVersion);
-        File venvDir = mBuildInfo.getFile(VIRTUAL_ENV_PATH);
-        if (venvDir != null) {
-            String binDir = (isWindows? "Scripts": "bin");
-            File pythonBinaryFile = new File(venvDir.getAbsolutePath(),
-                    binDir + File.separator + python);
-            String pythonBinPath = pythonBinaryFile.getAbsolutePath();
-            if (pythonBinaryFile.exists()) {
-                CLog.i("Python path " + pythonBinPath + ".\n");
-                return pythonBinPath;
-            }
-            CLog.e(python + " doesn't exist under the " +
-                   "created virtualenv dir (" + pythonBinPath + ").\n");
-        } else {
-          CLog.e(VIRTUAL_ENV_PATH + " not available in BuildInfo. " +
-                 "Please use VtsPythonVirtualenvPreparer tartget preparer.\n");
-        }
-
-        IRunUtil runUtil = (mRunUtil == null ? RunUtil.getDefault() : mRunUtil);
-        CommandResult c = runUtil.runTimedCmd(1000,
-                (isWindows ? "where" : "which"), python);
-        String pythonBin = c.getStdout().trim();
-        if (pythonBin.length() == 0) {
-            throw new RuntimeException("Could not find python binary on host "
-                    + "machine");
-        }
-        return pythonBin;
     }
 
     /**
@@ -1359,5 +1366,12 @@ IRuntimeHintProvider, ITestCollector, IBuildReceiver, IAbiReceiver {
     @Override
     public void setAbi(IAbi abi){
         mAbi = abi;
+    }
+
+    /**
+     * Creates VtsPythonRunnerHelper.
+     */
+    protected VtsPythonRunnerHelper createVtsPythonRunnerHelper() {
+        return new VtsPythonRunnerHelper(mBuildInfo);
     }
 }

@@ -49,6 +49,7 @@ vts_hal_driver_libs := \
   android.hardware.memtrack@1.0-vts.driver \
   android.hardware.neuralnetworks@1.0-vts.driver \
   android.hardware.nfc@1.0-vts.driver \
+  android.hardware.nfc@1.1-vts.driver \
   android.hardware.oemlock@1.0-vts.driver \
   android.hardware.power@1.0-vts.driver \
   android.hardware.power@1.1-vts.driver \
@@ -56,6 +57,7 @@ vts_hal_driver_libs := \
   android.hardware.radio@1.1-vts.driver \
   android.hardware.radio.deprecated@1.0-vts.driver \
   android.hardware.renderscript@1.0-vts.driver \
+  android.hardware.secure_element@1.0-vts.driver \
   android.hardware.sensors@1.0-vts.driver \
   android.hardware.soundtrigger@2.0-vts.driver \
   android.hardware.tetheroffload.config@1.0-vts.driver \
@@ -111,6 +113,7 @@ vts_hal_profiler_libs := \
   android.hardware.memtrack@1.0-vts.profiler \
   android.hardware.neuralnetworks@1.0-vts.profiler \
   android.hardware.nfc@1.0-vts.profiler \
+  android.hardware.nfc@1.1-vts.profiler \
   android.hardware.oemlock@1.0-vts.profiler \
   android.hardware.power@1.0-vts.profiler \
   android.hardware.power@1.1-vts.profiler \
@@ -118,6 +121,7 @@ vts_hal_profiler_libs := \
   android.hardware.radio@1.1-vts.profiler \
   android.hardware.radio.deprecated@1.0-vts.profiler \
   android.hardware.renderscript@1.0-vts.profiler \
+  android.hardware.secure_element@1.0-vts.profiler \
   android.hardware.sensors@1.0-vts.profiler \
   android.hardware.soundtrigger@2.0-vts.profiler \
   android.hardware.tetheroffload.config@1.0-vts.profiler \
@@ -150,6 +154,7 @@ vts_hal_test_bins := \
   VtsHalContexthubV1_0TargetTest \
   VtsHalDrmV1_0TargetTest \
   VtsHalDumpstateV1_0TargetTest \
+  VtsHalEvsV1_0TargetTest \
   VtsHalGatekeeperV1_0TargetTest \
   VtsHalGnssV1_0TargetTest \
   VtsHalGraphicsComposerV2_1TargetTest \
@@ -166,13 +171,16 @@ vts_hal_test_bins := \
   VtsHalMemtrackV1_0TargetTest \
   VtsHalNeuralnetworksV1_0TargetTest \
   VtsHalNfcV1_0TargetTest \
+  VtsHalNfcV1_1TargetTest \
   VtsHalOemLockV1_0TargetTest \
   VtsHalPowerV1_0TargetTest \
   VtsHalPowerV1_1TargetTest \
   VtsHalRadioV1_0TargetTest \
   VtsHalRadioV1_1TargetTest \
+  VtsHalRadioV1_2TargetTest \
   VtsHalRenderscriptV1_0TargetTest \
   VtsHalSapV1_0TargetTest \
+  VtsHalSecureElementV1_0TargetTest \
   VtsHalSensorsV1_0TargetTest \
   VtsHalSoundtriggerV2_0TargetTest \
   VtsHalTetheroffloadConfigV1_0TargetTest \

@@ -40,7 +40,6 @@ CtsDevicePolicyManagerTestCases
 CtsDisplayTestCases
 CtsDpiTestCases
 CtsDpiTestCases2
-CtsDramTestCases
 CtsDreamsTestCases
 CtsDrmTestCases
 CtsDumpsysHostTestCases
@@ -70,7 +69,6 @@ CtsKernelConfigTestCases
 CtsKeystoreTestCases
 CtsLeanbackJankTestCases
 CtsLibcoreFileIOTestCases
-CtsLibcoreJavaUtilCollectionsTestCases
 CtsLibcoreJsr166TestCases
 CtsLibcoreLegacy22TestCases
 CtsLibcoreOjTestCases

@@ -30,7 +30,6 @@ class ConfigKeys(object):
     KEY_TESTBED_NAME = "name"
     KEY_TEST_PATHS = "test_paths"
     KEY_TEST_SUITE = "test_suite"
-    KEY_TEST_MAX_TIMEOUT = "test_max_timeout"
 
     # Keys in test suite
     KEY_INCLUDE_FILTER = "include_filter"
@@ -43,10 +42,15 @@ class ConfigKeys(object):
     IKEY_BINARY_TEST_ENVP = "binary_test_envp"
     IKEY_BINARY_TEST_ARGS = "binary_test_args"
     IKEY_BINARY_TEST_LD_LIBRARY_PATH = "binary_test_ld_library_path"
-    IKEY_BINARY_TEST_DISABLE_FRAMEWORK = "binary_test_disable_framework"
-    IKEY_BINARY_TEST_STOP_NATIVE_SERVERS = "binary_test_stop_native_servers"
     IKEY_NATIVE_SERVER_PROCESS_NAME = "native_server_process_name"
     IKEY_GTEST_BATCH_MODE = "gtest_batch_mode"
+
+    # @Deprecated use IKEY_DISABLE_FRAMEWORK
+    IKEY_BINARY_TEST_DISABLE_FRAMEWORK = "binary_test_disable_framework"
+    IKEY_DISABLE_FRAMEWORK = "DISABLE_FRAMEWORK"
+    # @Deprecated use IKEY_STOP_NATIVE_SERVERS
+    IKEY_BINARY_TEST_STOP_NATIVE_SERVERS = "binary_test_stop_native_servers"
+    IKEY_STOP_NATIVE_SERVERS = "STOP_NATIVE_SERVERS"
 
     # Internal keys, used internally, not exposed to user's config files.
     IKEY_USER_PARAM = "user_params"
@@ -58,11 +62,13 @@ class ConfigKeys(object):
     IKEY_SKIP_ON_32BIT_ABI = "skip_on_32bit_abi"
     IKEY_SKIP_ON_64BIT_ABI = "skip_on_64bit_abi"
     IKEY_SKIP_IF_THERMAL_THROTTLING = "skip_if_thermal_throttling"
+    IKEY_DISABLE_CPU_FREQUENCY_SCALING = "disable_cpu_frequency_scaling"
 
     IKEY_BUILD = "build"
     IKEY_DATA_FILE_PATH = "data_file_path"
 
-    IKEY_BUG_REPORT_ON_FAILURE = "bug_report_on_failure"
+    IKEY_BUG_REPORT_ON_FAILURE = "BUG_REPORT_ON_FAILURE"
+    IKEY_LOGCAT_ON_FAILURE = "LOGCAT_ON_FAILURE"
 
     # sub fields of test_bed
     IKEY_ANDROID_DEVICE = "AndroidDevice"
@@ -103,12 +109,16 @@ class ConfigKeys(object):
     IKEY_GLOBAL_COVERAGE = "global_coverage"
     IKEY_SANCOV_RESOURCES_PATH = "sancov_resources_path"
     IKEY_GCOV_RESOURCES_PATH = "gcov_resources_path"
+    IKEY_COVERAGE_REPORT_PATH = "coverage_report_path"
+    IKEY_EXCLUDE_COVERAGE_PATH = "exclude_coverage_path"
 
     # Keys for the HAL HIDL GTest type (see VtsMultiDeviceTest.java).
     IKEY_PRECONDITION_HWBINDER_SERVICE = "precondition_hwbinder_service"
     IKEY_PRECONDITION_FEATURE = "precondition_feature"
     IKEY_PRECONDITION_FILE_PATH_PREFIX = "precondition_file_path_prefix"
+    IKEY_PRECONDITION_FIRST_API_LEVEL = "precondition_first_api_level"
     IKEY_PRECONDITION_LSHAL = "precondition_lshal"
+    IKEY_PRECONDITION_SYSPROP = "precondition_sysprop"
     IKEY_PRECONDITION_VINTF = "precondition_vintf"
 
     # Keys for toggle passthrough mode
@@ -127,12 +137,21 @@ class ConfigKeys(object):
     IKEY_LOG_UPLOADING_USE_DATE_DIRECTORY = "log_uploading_use_date_directory"
     IKEY_LOG_UPLOADING_URL_PREFIX = "log_uploading_url_prefix"
 
+    # Keys for general user config types
+    IKEY_USER_CONFIG_STR = 'CONFIG_STR'
+    IKEY_USER_CONFIG_INT = 'CONFIG_INT'
+    IKEY_USER_CONFIG_BOOL = 'CONFIG_BOOL'
+
     # A list of keys whose values in configs should not be passed to test
     # classes without unpacking first.
     RESERVED_KEYS = (KEY_TESTBED, KEY_LOG_PATH, KEY_TEST_PATHS)
 
-    # Vts self test related keys
+    # Keys for special run modes
+    IKEY_COLLECT_TESTS_ONLY = "collect_tests_only"
     RUN_AS_VTS_SELFTEST = "run_as_vts_self_test"
 
     # Vts compliance test related keys
     RUN_AS_COMPLIANCE_TEST = "run_as_compliance_test"
+
+    # Mobly test related keys
+    MOBLY_TEST_MODULE = "MOBLY_TEST_MODULE"

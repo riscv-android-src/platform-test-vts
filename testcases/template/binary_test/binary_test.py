@@ -47,14 +47,7 @@ class BinaryTest(base_test.BaseTestClass):
         tags: all the tags that appeared in binary list
         DEVICE_TMP_DIR: string, temp location for storing binary
         TAG_DELIMITER: string, separator used to separate tag and path
-        SYSPROP_VTS_NATIVE_SERVER: string, the name of a system property which
-                                   tells whether to stop properly configured
-                                   native servers where properly configured
-                                   means a server's init.rc is configured to
-                                   stop when that property's value is 1.
     '''
-    SYSPROP_VTS_NATIVE_SERVER = "vts.native_server.on"
-
     DEVICE_TMP_DIR = '/data/local/tmp'
     TAG_DELIMITER = '::'
     PUSH_DELIMITER = '->'
@@ -77,10 +70,9 @@ class BinaryTest(base_test.BaseTestClass):
             keys.ConfigKeys.IKEY_BINARY_TEST_ARGS,
             keys.ConfigKeys.IKEY_BINARY_TEST_LD_LIBRARY_PATH,
             keys.ConfigKeys.IKEY_BINARY_TEST_PROFILING_LIBRARY_PATH,
-            keys.ConfigKeys.IKEY_BINARY_TEST_DISABLE_FRAMEWORK,
-            keys.ConfigKeys.IKEY_BINARY_TEST_STOP_NATIVE_SERVERS,
             keys.ConfigKeys.IKEY_NATIVE_SERVER_PROCESS_NAME,
             keys.ConfigKeys.IKEY_PRECONDITION_FILE_PATH_PREFIX,
+            keys.ConfigKeys.IKEY_PRECONDITION_SYSPROP,
         ]
         self.getUserParams(
             req_param_names=required_params, opt_param_names=opt_params)
@@ -89,7 +81,7 @@ class BinaryTest(base_test.BaseTestClass):
         self.getUserParam(
             keys.ConfigKeys.KEY_TESTBED_NAME, error_if_not_found=True)
 
-        logging.info("%s: %s", keys.ConfigKeys.IKEY_DATA_FILE_PATH,
+        logging.debug("%s: %s", keys.ConfigKeys.IKEY_DATA_FILE_PATH,
                      self.data_file_path)
 
         self.binary_test_source = self.getUserParam(
@@ -204,11 +196,11 @@ class BinaryTest(base_test.BaseTestClass):
                     self.envp[tag] = coverage_utils.COVERAGE_TEST_ENV
 
         self.testcases = []
-
-        ret = precondition_utils.CanRunHidlHalTest(self, self._dut,
-                                                   self.shell, self.run_as_compliance_test)
-        if not ret:
-            self._skip_all_testcases = True
+        if not precondition_utils.CheckSysPropPrecondition(
+                self, self._dut, self.shell):
+            logging.warn('Precondition sysprop not met; '
+                         'all tests skipped.')
+            self.skipAllTests('precondition sysprop not met')
 
         self.tags = set()
         self.CreateTestCases()
@@ -219,41 +211,6 @@ class BinaryTest(base_test.BaseTestClass):
         if any(cmd_results[const.EXIT_CODE]):
             logging.error('Failed to set permission to some of the binaries:\n'
                           '%s\n%s', cmd, cmd_results)
-
-        stop_requested = False
-
-        if getattr(self, keys.ConfigKeys.IKEY_BINARY_TEST_DISABLE_FRAMEWORK,
-                   False):
-            # Stop Android runtime to reduce interference.
-            logging.debug("Stops the Android framework.")
-            self._dut.stop()
-            stop_requested = True
-
-        if getattr(self, keys.ConfigKeys.IKEY_BINARY_TEST_STOP_NATIVE_SERVERS,
-                   False):
-            logging.debug("Stops all properly configured native servers.")
-            results = self._dut.setProp(self.SYSPROP_VTS_NATIVE_SERVER, "1")
-            stop_requested = True
-
-        if stop_requested:
-            native_server_process_names = getattr(
-                self, keys.ConfigKeys.IKEY_NATIVE_SERVER_PROCESS_NAME, [])
-            if native_server_process_names:
-                for native_server_process_name in native_server_process_names:
-                    while True:
-                        cmd_result = self.shell.Execute("ps -A")
-                        if cmd_result[const.EXIT_CODE][0] != 0:
-                            logging.error("ps command failed (exit code: %s",
-                                          cmd_result[const.EXIT_CODE][0])
-                            break
-                        if (native_server_process_name not in cmd_result[
-                                const.STDOUT][0]):
-                            logging.info("Process %s not running",
-                                         native_server_process_name)
-                            break
-                        logging.info("Checking process %s",
-                                     native_server_process_name)
-                        time.sleep(1)
 
     def CreateTestCases(self):
         '''Push files to device and create test case objects.'''
@@ -282,31 +239,35 @@ class BinaryTest(base_test.BaseTestClass):
             if (tag.endswith(const.SUFFIX_32BIT) and self.abi_bitness == '64'
                 ) or (tag.endswith(const.SUFFIX_64BIT) and
                       self.abi_bitness == '32'):
-                logging.info('Bitness of test source, %s, does not match the '
-                             'abi_bitness, %s, of test run.', str(source[0]),
+                logging.debug('Bitness of test source, %s, does not match the '
+                             'abi_bitness, %s, of test run. Skipping',
+                             str(source[0]),
                              self.abi_bitness)
                 return False
 
             return True
 
         source_list = filter(isValidSource, source_list)
-        logging.info('Parsed test sources: %s', source_list)
+        logging.debug('Parsed test sources: %s', source_list)
 
         # Push source files first
         for src, dst, tag in source_list:
             if src:
                 if os.path.isdir(src):
                     src = os.path.join(src, '.')
-                logging.info('Pushing from %s to %s.', src, dst)
+                logging.debug('Pushing from %s to %s.', src, dst)
                 self._dut.adb.push('{src} {dst}'.format(src=src, dst=dst))
                 self.shell.Execute('ls %s' % dst)
+
+        if not hasattr(self, 'testcases'):
+            self.testcases = []
 
         # Then create test cases
         for src, dst, tag in source_list:
             if tag is not None:
                 # tag not being None means to create a test case
                 self.tags.add(tag)
-                logging.info('Creating test case from %s with tag %s', dst,
+                logging.debug('Creating test case from %s with tag %s', dst,
                              tag)
                 testcase = self.CreateTestCase(dst, tag)
                 if not testcase:
@@ -317,8 +278,8 @@ class BinaryTest(base_test.BaseTestClass):
                 else:
                     self.testcases.append(testcase)
 
-        if type(self.testcases) is not list or len(self.testcases) == 0:
-            asserts.fail("No test case is found or generated.")
+        if not self.testcases:
+            logging.warn("No test case is found or generated.")
 
     def PutTag(self, name, tag):
         '''Put tag on name and return the resulting string.
@@ -359,24 +320,13 @@ class BinaryTest(base_test.BaseTestClass):
 
     def tearDownClass(self):
         '''Perform clean-up tasks'''
-        if getattr(self, keys.ConfigKeys.IKEY_BINARY_TEST_STOP_NATIVE_SERVERS,
-                   False):
-            logging.debug("Restarts all properly configured native servers.")
-            results = self._dut.setProp(self.SYSPROP_VTS_NATIVE_SERVER, "0")
-
-        # Restart Android runtime.
-        if getattr(self, keys.ConfigKeys.IKEY_BINARY_TEST_DISABLE_FRAMEWORK,
-                   False):
-            logging.debug("Starts the Android framework.")
-            self._dut.start()
-
         # Retrieve coverage if applicable
         if self.coverage.enabled and self.coverage.global_coverage:
-            if not self._skip_all_testcases:
+            if not self.isSkipAllTests():
                 self.coverage.SetCoverageData(dut=self._dut, isGlobal=True)
 
         # Clean up the pushed binaries
-        logging.info('Start class cleaning up jobs.')
+        logging.debug('Start class cleaning up jobs.')
         # Delete pushed files
 
         sources = [
@@ -399,10 +349,10 @@ class BinaryTest(base_test.BaseTestClass):
         if not cmd_results or any(cmd_results[const.EXIT_CODE]):
             logging.warning('Failed to remove: %s', cmd_results)
 
-        if not self._skip_all_testcases and self.profiling.enabled:
+        if not self.isSkipAllTests() and self.profiling.enabled:
             self.profiling.ProcessAndUploadTraceData()
 
-        logging.info('Finished class cleaning up jobs.')
+        logging.debug('Finished class cleaning up jobs.')
 
     def ParseTestSource(self, source):
         '''Convert host side binary path to device side path.
@@ -529,7 +479,7 @@ class BinaryTest(base_test.BaseTestClass):
                                               test_case.profiling_library_path)
 
         cmd = test_case.GetRunCommand()
-        logging.info("Executing binary test command: %s", cmd)
+        logging.debug("Executing binary test command: %s", cmd)
         command_results = self.shell.Execute(cmd)
 
         self.VerifyTestResult(test_case, command_results)

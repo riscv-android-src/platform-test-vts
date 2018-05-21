@@ -36,7 +36,7 @@ include $(build_utils_dir)/vts_package_utils.mk
 -include external/ltp/android/ltp_package_list.mk
 
 VTS_OUT_ROOT := $(HOST_OUT)/vts
-VTS_TESTCASES_OUT := $(HOST_OUT)/vts/android-vts/testcases
+VTS_TESTCASES_OUT := $(VTS_OUT_ROOT)/android-vts/testcases
 VTS_TOOLS_OUT := $(VTS_OUT_ROOT)/android-vts/tools
 
 # Packaging rule for android-vts.zip
@@ -47,7 +47,7 @@ test_suite_readme := test/vts/README.md
 include $(BUILD_SYSTEM)/tasks/tools/compatibility.mk
 
 .PHONY: vts
-vts: $(compatibility_zip) run
+vts: $(compatibility_zip) vtslab adb
 $(call dist-for-goals, vts, $(compatibility_zip))
 
 # Packaging rule for android-vts.zip's testcases dir (DATA subdir).
@@ -111,15 +111,14 @@ target_hostdriven_copy_pairs := \
   $(call host-native-copy-pairs,$(target_hostdriven_modules),$(VTS_TESTCASES_OUT))
 
 host_additional_deps_copy_pairs := \
-  test/vts/tools/vts-hc/run:$(VTS_TOOLS_OUT)/run \
   test/vts/tools/vts-tradefed/etc/vts-tradefed_win.bat:$(VTS_TOOLS_OUT)/vts-tradefed_win.bat \
-  test/vts/tools/vts-tradefed/CtsDynamicConfig.xml:$(VTS_TESTCASES_OUT)/cts.dynamic
+  test/vts/tools/vts-tradefed/DynamicConfig.xml:$(VTS_TESTCASES_OUT)/cts.dynamic
 
 # Packaging rule for host-side Python logic, configs, and data files
 
 host_framework_files := \
   $(call find-files-in-subdirs,test/vts,"*.py" -and -type f,.) \
-  $(call find-files-in-subdirs,test/vts,"*.config" -and -type f,.) \
+  $(call find-files-in-subdirs,test/vts,"*.runner_conf" -and -type f,.) \
   $(call find-files-in-subdirs,test/vts,"*.push" -and -type f,.)
 
 host_framework_copy_pairs := \
@@ -128,7 +127,7 @@ host_framework_copy_pairs := \
 
 host_testcase_files := \
   $(call find-files-in-subdirs,test/vts-testcase,"*.py" -and -type f,.) \
-  $(call find-files-in-subdirs,test/vts-testcase,"*.config" -and -type f,.) \
+  $(call find-files-in-subdirs,test/vts-testcase,"*.runner_conf" -and -type f,.) \
   $(call find-files-in-subdirs,test/vts-testcase,"*.push" -and -type f,.) \
   $(call find-files-in-subdirs,test/vts-testcase,"*.dump" -and -type f,.)
 
@@ -143,6 +142,8 @@ host_kernel_config_copy_pairs := \
   $(foreach f,$(host_kernel_config_files),\
     kernel/configs/$(f):$(VTS_TESTCASES_OUT)/vts/testcases/kernel/config/data/$(f))
 
+ifneq ($(TARGET_BUILD_PDK),true)
+
 host_camera_its_files := \
   $(call find-files-in-subdirs,cts/apps/CameraITS,"*.py" -and -type f,.) \
   $(call find-files-in-subdirs,cts/apps/CameraITS,"*.pdf" -and -type f,.) \
@@ -151,6 +152,12 @@ host_camera_its_files := \
 host_camera_its_copy_pairs := \
   $(foreach f,$(host_camera_its_files),\
     cts/apps/CameraITS/$(f):$(VTS_TESTCASES_OUT)/CameraITS/$(f))
+
+else
+
+host_camera_its_copy_pairs :=
+
+endif  # ifneq ($(TARGET_BUILD_PDK),true)
 
 host_systrace_files := \
   $(filter-out .git/%, \
@@ -166,6 +173,13 @@ media_test_res_files := \
 media_test_res_copy_pairs := \
   $(foreach f,$(media_test_res_files),\
     hardware/interfaces/media/res/$(f):$(VTS_TESTCASES_OUT)/DATA/media/res/$(f))
+
+nbu_p2p_apk_files := \
+  $(call find-files-in-subdirs,test/vts-testcase/nbu/src,"*.apk" -and -type f,.)
+
+nbu_p2p_apk_copy_pairs := \
+  $(foreach f,$(nbu_p2p_apk_files),\
+      test/vts-testcase/nbu/src/$(f):$(VTS_TESTCASES_OUT)/DATA/app/nbu/$(f))
 
 performance_test_res_files := \
   $(call find-files-in-subdirs,test/vts-testcase/performance/res/,"*.*" -and -type f,.) \
@@ -202,23 +216,48 @@ acts_testcases_copy_pairs := \
   $(foreach f,$(acts_testcases_files),\
     tools/test/connectivity/acts/tests/google/$(f):$(VTS_TESTCASES_OUT)/vts/testcases/acts/$(f))
 
-$(compatibility_zip): \
-  $(call copy-many-files,$(target_native_copy_pairs)) \
-  $(call copy-many-files,$(target_spec_copy_pairs)) \
-  $(call copy-many-files,$(target_trace_copy_pairs)) \
-  $(call copy-many-files,$(target_hostdriven_copy_pairs)) \
-  $(call copy-many-files,$(target_hal_hash_copy_pairs)) \
-  $(call copy-many-files,$(host_additional_deps_copy_pairs)) \
+target_script_files := \
+  $(call find-files-in-subdirs,test/vts/script/target,"*.sh" -and -type f,.)
+
+target_script_copy_pairs := \
+  $(foreach f,$(target_script_files),\
+    test/vts/script/target/$(f):$(VTS_TESTCASES_OUT)/script/target/$(f))
+
+system_property_compatibility_test_res_copy_pairs := \
+  system/sepolicy/public/property_contexts:$(VTS_TESTCASES_OUT)/vts/testcases/security/system_property/data/property_contexts
+
+$(VTS_TESTCASES_OUT)/vts/testcases/vndk/golden/platform_vndk_version.txt:
+	@echo -n $(PLATFORM_VNDK_VERSION) > $@
+
+vts_test_core_copy_pairs := \
   $(call copy-many-files,$(host_framework_copy_pairs)) \
   $(call copy-many-files,$(host_testcase_copy_pairs)) \
+  $(call copy-many-files,$(host_additional_deps_copy_pairs)) \
+  $(call copy-many-files,$(target_spec_copy_pairs)) \
+  $(call copy-many-files,$(target_hal_hash_copy_pairs)) \
+  $(call copy-many-files,$(acts_framework_copy_pairs)) \
+
+vts_copy_pairs := \
+  $(vts_test_core_copy_pairs) \
+  $(call copy-many-files,$(target_native_copy_pairs)) \
+  $(call copy-many-files,$(target_trace_copy_pairs)) \
+  $(call copy-many-files,$(target_hostdriven_copy_pairs)) \
   $(call copy-many-files,$(host_kernel_config_copy_pairs)) \
   $(call copy-many-files,$(host_camera_its_copy_pairs)) \
   $(call copy-many-files,$(host_systrace_copy_pairs)) \
   $(call copy-many-files,$(media_test_res_copy_pairs)) \
+  $(call copy-many-files,$(nbu_p2p_apk_copy_pairs)) \
   $(call copy-many-files,$(performance_test_res_copy_pairs)) \
   $(call copy-many-files,$(audio_test_res_copy_pairs)) \
   $(call copy-many-files,$(kernel_rootdir_test_rc_copy_pairs)) \
-  $(call copy-many-files,$(acts_framework_copy_pairs)) \
   $(call copy-many-files,$(acts_testcases_copy_pairs)) \
+  $(call copy-many-files,$(target_script_copy_pairs)) \
+  $(call copy-many-files,$(system_property_compatibility_test_res_copy_pairs)) \
+  $(VTS_TESTCASES_OUT)/vts/testcases/vndk/golden/platform_vndk_version.txt \
+
+.PHONY: vts-test-core
+vts-test-core: $(vts_test_core_copy_pairs)
+
+$(compatibility_zip): $(vts_copy_pairs)
 
 -include vendor/google_vts/tools/build/vts_package_vendor.mk

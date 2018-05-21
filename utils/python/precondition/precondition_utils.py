@@ -103,9 +103,95 @@ def CanRunHidlHalTest(test_instance,
     if hal:
         testable, _ = hal_service_name_utils.GetHalServiceName(
             shell, hal, bitness, run_as_compliance_test)
-        if not testable:
-            logging.warn("The required hal %s is not testable.", hal)
-            return False
+        return testable
 
     logging.info("Precondition check pass.")
+    return True
+
+
+def MeetFirstApiLevelPrecondition(test_instance, dut=None):
+    """Checks first API level precondition of a test instance.
+
+    If the device's ro.product.first_api_level is 0, this function checks
+    ro.build.version.sdk.
+
+    Args:
+        test_instance: the test instance which inherits BaseTestClass.
+        dut: the AndroidDevice under test.
+
+    Returns:
+        True if the device's first API level is greater than or equal to the
+        value of the precondition; False otherwise.
+    """
+    opt_params = [keys.ConfigKeys.IKEY_PRECONDITION_FIRST_API_LEVEL]
+    test_instance.getUserParams(opt_param_names=opt_params)
+    if not hasattr(test_instance,
+                   keys.ConfigKeys.IKEY_PRECONDITION_FIRST_API_LEVEL):
+        return True
+
+    precond_level_attr = getattr(
+        test_instance, keys.ConfigKeys.IKEY_PRECONDITION_FIRST_API_LEVEL, 0)
+    try:
+        precond_level = int(precond_level_attr)
+    except ValueError:
+        logging.error("Cannot parse first API level precondition: %s",
+                      precond_level_attr)
+        return True
+
+    if not dut:
+        logging.info("Read first API level from the first device.")
+        dut = test_instance.android_devices[0]
+    device_level = dut.getLaunchApiLevel(strict=False)
+    if not device_level:
+        logging.error("Cannot read first API level from device. "
+                      "Assume it meets the precondition.")
+        return True
+
+    logging.info("Device's first API level=%d; precondition=%d",
+                 device_level, precond_level)
+    return device_level >= precond_level
+
+
+def CheckSysPropPrecondition(test_instance,
+                             dut,
+                             shell=None):
+    """Checks sysprop precondition of a test instance.
+
+    Args:
+        test_instance: the test instance which inherits BaseTestClass.
+        dut: the AndroidDevice under test.
+        shell: the ShellMirrorObject to execute command on the device.
+               If not specified, the function creates one from dut.
+
+    Returns:
+        False if precondition is not met (i.e., to skip tests),
+        True otherwise (e.g., when no sysprop precondition is set;
+        the precondition is satisfied;
+        there is an error in retrieving the target sysprop; or
+        the specified sysprop is undefined)
+    """
+    if not hasattr(test_instance, keys.ConfigKeys.IKEY_PRECONDITION_SYSPROP):
+        return True
+
+    precond_sysprop = str(getattr(
+        test_instance, keys.ConfigKeys.IKEY_PRECONDITION_SYSPROP, ''))
+    if "=" not in precond_sysprop:
+        logging.error("precondition-sysprop value is invalid.")
+        return True
+
+    if shell is None:
+        dut.shell.InvokeTerminal("check_sysprop_precondition")
+        shell = dut.shell.check_sysprop_precondition
+
+    sysprop_key, sysprop_value = precond_sysprop.split('=')
+    cmd_results = shell.Execute('getprop %s' % sysprop_key)
+    if any(cmd_results[const.EXIT_CODE]):
+        logging.error('Failed to read sysprop:\n%s', sysprop_key)
+        return True
+    else:
+        value = cmd_results[const.STDOUT][0].strip()
+        if len(value) == 0:
+            return True
+        elif value != sysprop_value:
+            return False
     return True

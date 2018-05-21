@@ -17,10 +17,6 @@
 package com.android.tradefed.util;
 
 import com.android.tradefed.log.LogUtil.CLog;
-import com.android.tradefed.util.CommandStatus;
-import com.android.tradefed.util.IRunUtil;
-import com.android.tradefed.util.RunInterruptedException;
-import com.android.tradefed.util.RunUtil;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -65,15 +61,24 @@ public class ProcessHelper {
         private Reader mReader;
         private StringBuilder mBuffer;
 
+        static enum LogType {
+            STDOUT,
+            STDERR;
+        }
+
+        private LogType mLogType;
+
         /**
          * @param reader the input stream to read from.
          * @param buffer the buffer containing the input data.
          * @param name the name of the thread.
+         * @param logType enum, type of log output.
          */
-        public ReaderThread(Reader reader, StringBuilder buffer, String name) {
+        public ReaderThread(Reader reader, StringBuilder buffer, String name, LogType logType) {
+            super(name);
             mReader = reader;
             mBuffer = buffer;
-            setName(name);
+            mLogType = logType;
         }
 
         /**
@@ -89,10 +94,29 @@ public class ProcessHelper {
                     if (readCount < 0) {
                         break;
                     }
-                    mBuffer.append(charBuffer, 0, readCount);
+                    String newRead = new String(charBuffer, 0, readCount);
+
+                    int newLineLen = 0;
+                    if (newRead.endsWith("\r\n")) {
+                        newLineLen = 2;
+                    } else if (newRead.endsWith("\n")) {
+                        newLineLen = 1;
+                    }
+
+                    String newReadPrint = newRead.substring(0, newRead.length() - newLineLen);
+                    switch (mLogType) {
+                        case STDOUT:
+                            CLog.i(newReadPrint);
+                            break;
+                        case STDERR:
+                            CLog.e(newReadPrint);
+                            break;
+                    }
+                    mBuffer.append(newRead);
                 }
             } catch (IOException e) {
-                CLog.e("%s: %s", getName(), e.toString());
+                CLog.e("IOException during ProcessHelper#ReaderThread run.");
+                CLog.e(e);
             }
         }
     }
@@ -115,17 +139,17 @@ public class ProcessHelper {
             synchronized (mLock) {
                 mExecutionThread = Thread.currentThread();
                 if (mCancelled) {
-                    CLog.i("Process was cancelled before being awaited.");
+                    CLog.w("Process was cancelled before being awaited.");
                     return false;
                 }
             }
             boolean success;
             try {
                 success = (mProcess.waitFor() == 0);
-                CLog.i("Process terminates normally.");
+                CLog.d("Process terminates normally.");
             } catch (InterruptedException e) {
                 success = false;
-                CLog.i("Process is interrupted.");
+                CLog.e("Process is interrupted.");
             }
             return success;
         }
@@ -137,17 +161,17 @@ public class ProcessHelper {
          */
         @Override
         public void cancel() {
-            CLog.i("Attempt to interrupt execution thread.");
+            CLog.w("Attempt to interrupt execution thread.");
             synchronized (mLock) {
                 if (!mCancelled) {
                     mCancelled = true;
                     if (mExecutionThread != null) {
                         mExecutionThread.interrupt();
                     } else {
-                        CLog.i("Execution thread has not started.");
+                        CLog.d("Execution thread has not started.");
                     }
                 } else {
-                    CLog.i("Execution thread has been cancelled.");
+                    CLog.e("Execution thread has been cancelled.");
                 }
             }
         }
@@ -174,8 +198,10 @@ public class ProcessHelper {
         mStdinWriter = new OutputStreamWriter(mProcess.getOutputStream());
         mStdoutReader = new InputStreamReader(mProcess.getInputStream());
         mStderrReader = new InputStreamReader(mProcess.getErrorStream());
-        mStdoutThread = new ReaderThread(mStdoutReader, mStdout, "process-helper-stdout");
-        mStderrThread = new ReaderThread(mStderrReader, mStderr, "process-helper-stderr");
+        mStdoutThread = new ReaderThread(
+                mStdoutReader, mStdout, "process-helper-stdout", ReaderThread.LogType.STDOUT);
+        mStderrThread = new ReaderThread(
+                mStderrReader, mStderr, "process-helper-stderr", ReaderThread.LogType.STDERR);
         mStdoutThread.start();
         mStderrThread.start();
     }
@@ -191,9 +217,10 @@ public class ProcessHelper {
      */
     public CommandStatus waitForProcess(long timeoutMsecs) throws RunInterruptedException {
         VtsRunnable vtsRunnable = new VtsRunnable();
+        CommandStatus status;
         // Use default RunUtil because it can receive the notification of "invocation stop".
         try {
-            return RunUtil.getDefault().runTimed(timeoutMsecs, vtsRunnable, true);
+            status = RunUtil.getDefault().runTimed(timeoutMsecs, vtsRunnable, true);
         } catch (RunInterruptedException e) {
             // clear the flag set by default RunUtil.
             Thread.interrupted();
@@ -205,6 +232,14 @@ public class ProcessHelper {
             }
             throw e;
         }
+        if (CommandStatus.SUCCESS.equals(status) || CommandStatus.FAILED.equals(status)) {
+            // Join the receiver threads otherwise output might not be available yet.
+            joinThread(mStdoutThread, THREAD_JOIN_TIMEOUT_MSECS);
+            joinThread(mStderrThread, THREAD_JOIN_TIMEOUT_MSECS);
+        } else {
+            CLog.w("Process status is %s", status);
+        }
+        return status;
     }
 
     /**
@@ -228,16 +263,18 @@ public class ProcessHelper {
     }
 
     /**
-     * @return the stdout of the process. As the buffer is not thread safe, this method should be
-     * called after {@link #cleanUp()}.
+     * @return the stdout of the process. As the buffer is not thread safe, the caller must call
+     * {@link #cleanUp()} or {@link #waitForProcess(long)} to ensure process termination before
+     * calling this method.
      */
     public String getStdout() {
         return mStdout.toString();
     }
 
     /**
-     * @return the stderr of the process. As the buffer is not thread safe, this method should be
-     * called after {@link #cleanUp()}.
+     * @return the stderr of the process. As the buffer is not thread safe, the caller must call
+     * {@link #cleanUp()} or {@link #waitForProcess(long)} to ensure process termination before
+     * calling this method.
      */
     public String getStderr() {
         return mStderr.toString();

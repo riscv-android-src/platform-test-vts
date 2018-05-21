@@ -445,7 +445,11 @@ void HalHidlProfilerCodeGen::GenerateHeaderIncludeFiles(
 
   // Include imported classes.
   for (const auto& import : message.import()) {
-    FQName import_name = FQName(import);
+    FQName import_name;
+    if (!FQName::parse(import, &import_name)) {
+      abort();
+    }
+
     string imported_package_name = import_name.package();
     string imported_package_version = import_name.version();
     string imported_component_name = import_name.name();
@@ -503,11 +507,16 @@ void HalHidlProfilerCodeGen::GenerateProfilerSanityCheck(
   out << "return;\n";
   out.unindent();
   out << "}\n";
-
-  out << "if (strcmp(version, \"" << GetVersion(message) << "\") != 0) {\n";
+  out << "std::string version_str = std::string(version);\n";
+  out << "int major_version = stoi(version_str.substr(0, "
+         "version_str.find('.')));\n";
+  out << "int minor_version = stoi(version_str.substr(version_str.find('.') + "
+         "1));\n";
+  out << "if (major_version != " << GetMajorVersion(message)
+      << " || minor_version > " << GetMinorVersion(message) << ") {\n";
   out.indent();
   out << "LOG(WARNING) << \"incorrect version. Expect: " << GetVersion(message)
-      << " actual: \" << interface;\n";
+      << " or lower (if version != x.0), actual: \" << version;\n";
   out << "return;\n";
   out.unindent();
   out << "}\n";

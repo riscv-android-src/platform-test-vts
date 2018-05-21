@@ -16,79 +16,149 @@
 
 package com.android.tradefed.util;
 
-import com.android.tradefed.util.CommandStatus;
-import com.android.tradefed.util.IRunUtil;
-import com.android.tradefed.util.ProcessHelper;
-import com.android.tradefed.util.RunInterruptedException;
-import com.android.tradefed.util.RunUtil;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
-import junit.framework.TestCase;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 /**
  * Test cases for {@link ProcessHelper}.
  */
-public class ProcessHelperTest extends TestCase {
-    private ProcessHelper mProcess;
+@RunWith(JUnit4.class)
+public class ProcessHelperTest {
+    private ProcessHelper mProcessHelper;
 
     /**
-     * Reset the ProcessHelper
+     * Return a mock process.
      */
-    @Override
+    private Process createMockProcess(
+            String stdout, String stderr, int exitValue, long executionTimeMsecs) {
+        // No need to close OutputStream and ByteArrayInputStream because doing so has no effect.
+        OutputStream stdinStream = new OutputStream() {
+            @Override
+            public void write(int b) throws IOException {}
+        };
+        InputStream stdoutStream = new ByteArrayInputStream(stdout.getBytes());
+        InputStream stderrStream = new ByteArrayInputStream(stderr.getBytes());
+        long endTime = System.currentTimeMillis() + executionTimeMsecs;
+
+        return new Process() {
+            private boolean destroyed = false;
+
+            private boolean isRunning() {
+                return System.currentTimeMillis() <= endTime && !destroyed;
+            }
+
+            @Override
+            public void destroy() {
+                destroyed = true;
+            }
+
+            @Override
+            public int exitValue() {
+                if (isRunning()) {
+                    throw new IllegalThreadStateException();
+                }
+                return exitValue;
+            }
+
+            @Override
+            public InputStream getInputStream() {
+                return stdoutStream;
+            }
+
+            @Override
+            public OutputStream getOutputStream() {
+                return stdinStream;
+            }
+
+            @Override
+            public InputStream getErrorStream() {
+                return stderrStream;
+            }
+
+            @Override
+            public int waitFor() throws InterruptedException {
+                while (isRunning()) {
+                    Thread.sleep(50);
+                }
+                return exitValue;
+            }
+        };
+    }
+
+    /**
+     * Reset the ProcessHelper.
+     */
+    @Before
     public void setUp() {
-        mProcess = null;
+        mProcessHelper = null;
     }
 
     /**
      * Terminate the process, join threads and close IO streams.
      */
-    @Override
+    @After
     public void tearDown() {
-        if (mProcess != null) {
-            mProcess.cleanUp();
+        if (mProcessHelper != null) {
+            mProcessHelper.cleanUp();
         }
     }
 
     /**
      * Test running a process that returns zero.
      */
-    public void testSuccess() throws IOException {
-        mProcess = new ProcessHelper(new ProcessBuilder("echo", "123").start());
-        CommandStatus status = mProcess.waitForProcess(1000);
+    @Test
+    public void testSuccess() {
+        mProcessHelper = new ProcessHelper(createMockProcess("123\n", "456\n", 0, 10));
+        CommandStatus status = mProcessHelper.waitForProcess(10000);
         assertEquals(CommandStatus.SUCCESS, status);
-        assertFalse(mProcess.isRunning());
-        assertTrue(mProcess.getStdout().equals("123\n"));
-        assertTrue(mProcess.getStderr().isEmpty());
+        assertFalse(mProcessHelper.isRunning());
+        assertTrue(mProcessHelper.getStdout().equals("123\n"));
+        assertTrue(mProcessHelper.getStderr().equals("456\n"));
     }
 
     /**
      * Test running a process that returns non-zero.
      */
-    public void testFailure() throws IOException {
-        mProcess = new ProcessHelper(new ProcessBuilder("ls", "--WRONG-OPTION").start());
-        CommandStatus status = mProcess.waitForProcess(1000);
+    @Test
+    public void testFailure() {
+        mProcessHelper = new ProcessHelper(createMockProcess("123\n", "456\n", 1, 10));
+        CommandStatus status = mProcessHelper.waitForProcess(10000);
         assertEquals(CommandStatus.FAILED, status);
-        assertFalse(mProcess.isRunning());
-        assertTrue(mProcess.getStdout().isEmpty());
-        assertTrue(mProcess.getStderr().contains("unrecognized option"));
+        assertFalse(mProcessHelper.isRunning());
+        assertTrue(mProcessHelper.getStdout().equals("123\n"));
+        assertTrue(mProcessHelper.getStderr().equals("456\n"));
     }
 
     /**
      * Test running a process that times out.
      */
-    public void testTimeout() throws IOException {
-        mProcess = new ProcessHelper(new ProcessBuilder("cat").start());
-        CommandStatus status = mProcess.waitForProcess(30);
+    @Test
+    public void testTimeout() {
+        mProcessHelper = new ProcessHelper(createMockProcess("", "", 1, 10000));
+        CommandStatus status = mProcessHelper.waitForProcess(100);
         assertEquals(CommandStatus.TIMED_OUT, status);
-        assertTrue(mProcess.isRunning());
+        assertTrue(mProcessHelper.isRunning());
     }
 
     /**
      * Test running a process and being interrupted.
      */
-    public void testInterrupt() throws IOException, InterruptedException {
-        mProcess = new ProcessHelper(new ProcessBuilder("cat").start());
+    @Test
+    public void testInterrupt() throws InterruptedException {
+        mProcessHelper = new ProcessHelper(createMockProcess("", "", 1, 10000));
         IRunUtil runUtil = RunUtil.getDefault();
         Thread testThread = Thread.currentThread();
 
@@ -107,10 +177,10 @@ public class ProcessHelperTest extends TestCase {
         runUtil.allowInterrupt(true);
         timer.start();
         try {
-            mProcess.waitForProcess(100);
+            mProcessHelper.waitForProcess(100);
             fail();
         } catch (RunInterruptedException e) {
-            assertTrue(mProcess.isRunning());
+            assertTrue(mProcessHelper.isRunning());
         } finally {
             timer.join(1000);
         }

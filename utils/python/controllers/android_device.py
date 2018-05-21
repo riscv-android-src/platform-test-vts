@@ -24,6 +24,7 @@ import threading
 import time
 import traceback
 
+from vts.runners.host import asserts
 from vts.runners.host import errors
 from vts.runners.host import keys
 from vts.runners.host import logger as vts_logger
@@ -33,6 +34,7 @@ from vts.runners.host.tcp_client import vts_tcp_client
 from vts.utils.python.controllers import adb
 from vts.utils.python.controllers import event_dispatcher
 from vts.utils.python.controllers import fastboot
+from vts.utils.python.controllers import customflasher
 from vts.utils.python.controllers import sl4a_client
 from vts.utils.python.mirror import mirror_tracker
 
@@ -56,6 +58,10 @@ DEFAULT_AGENT_BASE_DIR = "/data/local/tmp"
 THREAD_SLEEP_TIME = 1
 # Max number of attempts that the client can make to connect to the agent
 MAX_AGENT_CONNECT_RETRIES = 10
+
+# The argument to fastboot getvar command to determine whether the device has
+# the slot for vbmeta.img
+_FASTBOOT_VAR_HAS_VBMETA = "has-slot:vbmeta"
 
 
 class AndroidDeviceError(signals.ControllerError):
@@ -339,6 +345,11 @@ class AndroidDevice(object):
         adb: An AdbProxy object used for interacting with the device via adb.
         fastboot: A FastbootProxy object used for interacting with the device
                   via fastboot.
+        customflasher: A CustomFlasherProxy object used for interacting with
+                       the device via user defined flashing binary.
+        enable_vts_agent: bool, whether VTS agent is used.
+        enable_sl4a: bool, whether SL4A is used.
+        enable_sl4a_ed: bool, whether SL4A Event Dispatcher is used.
         host_command_port: the host-side port for runner to agent sessions
                            (to send commands and receive responses).
         host_callback_port: the host-side port for agent to runner sessions
@@ -368,6 +379,7 @@ class AndroidDevice(object):
         self.vts_agent_process = None
         self.adb = adb.AdbProxy(serial)
         self.fastboot = fastboot.FastbootProxy(serial)
+        self.customflasher = customflasher.CustomFlasherProxy(serial)
         if not self.isBootloaderMode:
             self.rootAdb()
         self.host_command_port = None
@@ -386,6 +398,14 @@ class AndroidDevice(object):
     def __del__(self):
         self.cleanUp()
 
+    def SetCustomFlasherPath(self, customflasher_path):
+        """Sets customflasher path to use to flash the device.
+
+        Args:
+            customflasher_path: string, path to user-spcified flash binary.
+        """
+        self.customflasher.SetCustomBinaryPath(customflasher_path)
+
     def cleanUp(self):
         """Cleans up the AndroidDevice object and releases any resources it
         claimed.
@@ -397,6 +417,17 @@ class AndroidDevice(object):
         if self.sl4a_host_port:
             self.adb.forward("--remove tcp:%s" % self.sl4a_host_port)
             self.sl4a_host_port = None
+
+    @property
+    def hasVbmetaSlot(self):
+        """True if the device has the slot for vbmeta."""
+        if not self.isBootloaderMode:
+            self.adb.reboot_bootloader()
+
+        out = self.fastboot.getvar(_FASTBOOT_VAR_HAS_VBMETA).strip()
+        if ("%s: yes" % _FASTBOOT_VAR_HAS_VBMETA) in out:
+            return True
+        return False
 
     @property
     def isBootloaderMode(self):
@@ -441,6 +472,58 @@ class AndroidDevice(object):
         else:
             model = self.getProp("ro.product.name").lower()
             return model
+
+    @property
+    def first_api_level(self):
+        """Gets the API level that the device was initially launched with."""
+        return self.getProp("ro.product.first_api_level")
+
+    @property
+    def sdk_version(self):
+        """Gets the SDK version that the device is running with."""
+        return self.getProp("ro.build.version.sdk")
+
+    def getLaunchApiLevel(self, strict=True):
+        """Gets the API level that the device was initially launched with.
+
+        This method reads ro.product.first_api_level from the device. If the
+        value is 0, it then reads ro.build.version.sdk.
+
+        Args:
+            strict: A boolean, whether to fail the test if the property is
+                    not an integer or not defined.
+
+        Returns:
+            An integer, the API level.
+            0 if the property is not an integer or not defined.
+        """
+        level_str = self.first_api_level
+        try:
+            level = int(level_str)
+        except ValueError:
+            error_msg = "Cannot parse first_api_level: %s" % level_str
+            if strict:
+                asserts.fail(error_msg)
+            logging.error(error_msg)
+            return 0
+
+        if level != 0:
+            return level
+
+        level_str = self.sdk_version
+        try:
+            return int(level_str)
+        except ValueError:
+            error_msg = "Cannot parse version.sdk: %s" % level_str
+            if strict:
+                asserts.fail(error_msg)
+            logging.error(error_msg)
+            return 0
+
+    @property
+    def vndk_version(self):
+        """Gets the VNDK version that the vendor partition is using."""
+        return self.getProp("ro.vndk.version")
 
     @property
     def cpu_abi(self):
@@ -630,7 +713,6 @@ class AndroidDevice(object):
         self.adb.bugreport(" > %s" % full_out_path)
         self.log.info("Bugreport for %s taken at %s", test_name, full_out_path)
 
-    @utils.timeout(15 * 60)
     def waitForBootCompletion(self, timeout=900):
         """Waits for Android framework to broadcast ACTION_BOOT_COMPLETED.
 
@@ -643,21 +725,30 @@ class AndroidDevice(object):
         """
         start = time.time()
         try:
-            self.adb.wait_for_device()
+            self.adb.wait_for_device(timeout=timeout)
         except adb.AdbError as e:
             # adb wait-for-device is not always possible in the lab
             logging.exception(e)
             return False
 
-        while not self.hasBooted():
+        while not self.isBootCompleted():
             if time.time() - start >= timeout:
                 logging.error("Timeout while waiting for boot completion.")
                 return False
-            time.sleep(3)
+            time.sleep(1)
 
         return True
 
+    # Deprecated. Use isBootCompleted instead
     def hasBooted(self):
+        """Checks whether the device has booted.
+
+        Returns:
+            True if booted, False otherwise.
+        """
+        return self.isBootCompleted()
+
+    def isBootCompleted(self):
         """Checks whether the device has booted.
 
         Returns:
@@ -670,23 +761,117 @@ class AndroidDevice(object):
         except adb.AdbError:
             # adb shell calls may fail during certain period of booting
             # process, which is normal. Ignoring these errors.
+            pass
+
+        return False
+
+    def isFrameworkRunning(self, check_boot_completion=True):
+        """Checks whether Android framework is started.
+
+        This function will first check boot_completed prop. If boot_completed
+        is 0, then return False meaning framework not started.
+        Then this function will check whether system_server process is running.
+        If yes, then return True meaning framework is started.
+
+        The assumption here is if prop boot_completed is 0 then framework
+        is stopped.
+
+        There are still cases which can make this function return wrong
+        result. For example, boot_completed is set to 0 manually without
+        without stopping framework.
+
+        Args:
+            check_boot_completion: bool, whether to check boot completion
+                                   before checking framework status. This is an
+                                   important step for ensuring framework is
+                                   started. Under most circumstances this value
+                                   should be set to True.
+                                   Default True.
+
+        Returns:
+            True if started, False otherwise.
+        """
+        # First, check whether boot has completed.
+        if check_boot_completion and not self.isBootCompleted():
             return False
 
-    def start(self):
-        """Starts Android runtime and waits for ACTION_BOOT_COMPLETED."""
-        logging.info("starting Android Runtime")
-        self.adb.shell("start")
-        if self.waitForBootCompletion(60 * 2):
-            logging.info("Android Runtime started")
-        else:
-            logging.error("Failed to start Android Runtime.")
+        cmd = 'ps -g system | grep system_server'
+        res = self.adb.shell(cmd)
 
-    def stop(self):
-        """Stops Android runtime."""
-        logging.info("stopping Android Runtime")
+        return 'system_server' in res
+
+    def startFramework(self,
+                       wait_for_completion=True,
+                       wait_for_completion_timeout=120):
+        """Starts Android framework.
+
+        By default this function will wait for framework starting process to
+        finish before returning.
+
+        Args:
+            wait_for_completion: bool, whether to wait for framework to complete
+                                 starting. Default: True
+            wait_for_completion_timeout: timeout in seconds for waiting framework
+                                 to start. Default: 2 minutes
+
+        Returns:
+            bool, True if framework start success. False otherwise.
+        """
+        logging.info("starting Android framework")
+        self.adb.shell("start")
+
+        if wait_for_completion:
+            return self.waitForFrameworkStartComplete(wait_for_completion_timeout)
+
+        return True
+
+    def start(self):
+        """Starts Android framework and waits for ACTION_BOOT_COMPLETED.
+
+        Returns:
+            bool, True if framework start success. False otherwise.
+        """
+        return self.startFramework()
+
+    def stopFramework(self):
+        """Stops Android framework.
+
+        Method will block until stop is complete.
+        """
+        logging.info("stopping Android framework")
         self.adb.shell("stop")
         self.setProp("sys.boot_completed", 0)
-        logging.info("Android Runtime stopped")
+        logging.info("Android framework stopped")
+
+    def stop(self):
+        """Stops Android framework.
+
+        Method will block until stop is complete.
+        """
+        self.stopFramework()
+
+    def waitForFrameworkStartComplete(self, timeout_secs=120):
+        """Wait for Android framework to complete starting.
+
+        Args:
+            timeout_secs: int, seconds to wait for boot completion. Default is
+                          2 minutes.
+
+        Returns:
+            bool, True if framework is started. False otherwise or timeout
+        """
+        start = time.time()
+
+        # First, wait for boot completion and checks
+        self.waitForBootCompletion(timeout_secs)
+
+        while not self.isFrameworkRunning(check_boot_completion=False):
+            if time.time() - start >= timeout_secs:
+                logging.error("Timeout while waiting for framework to start.")
+                return False
+            time.sleep(1)
+
+        return True
 
     def setProp(self, name, value):
         """Calls setprop shell command.
@@ -775,15 +960,15 @@ class AndroidDevice(object):
         2. Start VtsAgent and create HalMirror unless disabled in config.
         3. If enabled in config, start sl4a service and create sl4a clients.
         """
-        enable_vts_agent = getattr(self, "enable_vts_agent", True)
-        enable_sl4a = getattr(self, "enable_sl4a", False)
-        enable_sl4a_ed = getattr(self, "enable_sl4a_ed", False)
+        self.enable_vts_agent = getattr(self, "enable_vts_agent", True)
+        self.enable_sl4a = getattr(self, "enable_sl4a", False)
+        self.enable_sl4a_ed = getattr(self, "enable_sl4a_ed", False)
         try:
             self.startAdbLogcat()
         except:
             self.log.exception("Failed to start adb logcat!")
             raise
-        if enable_vts_agent:
+        if self.enable_vts_agent:
             self.startVtsAgent()
             self.device_command_port = int(
                 self.adb.shell("cat /data/local/tmp/vts_tcp_server_port"))
@@ -792,14 +977,14 @@ class AndroidDevice(object):
                 self.host_command_port = adb.get_available_host_port()
             self.adb.tcp_forward(self.host_command_port,
                                  self.device_command_port)
-            self.hal = mirror_tracker.MirrorTracker(self.host_command_port,
-                                            self.host_callback_port, True)
+            self.hal = mirror_tracker.MirrorTracker(
+                self.host_command_port, self.host_callback_port, True)
             self.lib = mirror_tracker.MirrorTracker(self.host_command_port)
             self.shell = mirror_tracker.MirrorTracker(
                 host_command_port=self.host_command_port, adb=self.adb)
-        if enable_sl4a:
+        if self.enable_sl4a:
             try:
-                self.startSl4aClient(enable_sl4a_ed)
+                self.startSl4aClient(eself.enable_sl4a_ed)
             except Exception as e:
                 self.log.exception("Failed to start SL4A!")
                 self.log.exception(e)
@@ -810,9 +995,11 @@ class AndroidDevice(object):
         """
         if self.adb_logcat_process:
             self.stopAdbLogcat()
-        self._terminateAllSl4aSessions()
-        self.stopSl4a()
-        self.stopVtsAgent()
+        if getattr(self, "enable_sl4a", False):
+            self._terminateAllSl4aSessions()
+            self.stopSl4a()
+        if getattr(self, "enable_vts_agent", True):
+            self.stopVtsAgent()
         if self.hal:
             self.hal.CleanUp()
 
@@ -857,22 +1044,20 @@ class AndroidDevice(object):
         bits = ['64', '32'] if self.is64Bit else ['32']
         for bitness in bits:
             vts_agent_log_path = os.path.join(self.log_path,
-                                              "vts_agent_" + bitness + ".log")
-            cmd = (
-                'adb -s {s} shell LD_LIBRARY_PATH={path}/{bitness} '
-                '{path}/{bitness}/vts_hal_agent{bitness} '
-                '--hal_driver_path_32={path}/32/vts_hal_driver32 '
-                '--hal_driver_path_64={path}/64/vts_hal_driver64 '
-                '--spec_dir={path}/spec '
-                '--shell_driver_path_32={path}/32/vts_shell_driver32 '
-                '--shell_driver_path_64={path}/64/vts_shell_driver64 '
-                '-l {severity} >> {log} 2>&1'
-            ).format(
-                s=self.serial,
-                bitness=bitness,
-                path=DEFAULT_AGENT_BASE_DIR,
-                log=vts_agent_log_path,
-                severity=log_severity)
+                'vts_agent_%s_%s.log' % (bitness, self.serial))
+            cmd = ('adb -s {s} shell LD_LIBRARY_PATH={path}/{bitness} '
+                   '{path}/{bitness}/vts_hal_agent{bitness} '
+                   '--hal_driver_path_32={path}/32/vts_hal_driver32 '
+                   '--hal_driver_path_64={path}/64/vts_hal_driver64 '
+                   '--spec_dir={path}/spec '
+                   '--shell_driver_path_32={path}/32/vts_shell_driver32 '
+                   '--shell_driver_path_64={path}/64/vts_shell_driver64 '
+                   '-l {severity} >> {log} 2>&1').format(
+                       s=self.serial,
+                       bitness=bitness,
+                       path=DEFAULT_AGENT_BASE_DIR,
+                       log=vts_agent_log_path,
+                       severity=log_severity)
             try:
                 self.vts_agent_process = utils.start_standing_subprocess(
                     cmd, check_health_delay=1)
@@ -964,8 +1149,7 @@ class AndroidDevice(object):
     def stopSl4a(self):
         """Stops an SL4A apk on a target device."""
         try:
-            self.adb.shell(
-                "am force-stop %s" % SL4A_APK_NAME, ignore_status=True)
+            self.adb.shell("am force-stop %s" % SL4A_APK_NAME)
         except adb.AdbError as e:
             self.log.warn("Fail to stop package %s: %s", SL4A_APK_NAME, e)
 
@@ -985,9 +1169,7 @@ class AndroidDevice(object):
         """
         for cmd in ("ps -A", "ps"):
             try:
-                out = self.adb.shell(
-                    '%s | grep "S %s"' % (cmd, package_name),
-                    ignore_status=True)
+                out = self.adb.shell('%s | grep "S %s"' % (cmd, package_name))
                 if package_name not in out:
                     continue
                 try:
@@ -1235,3 +1417,7 @@ class AndroidDeviceLoggerAdapter(logging.LoggerAdapter):
         """
         msg = "[AndroidDevice|%s] %s" % (self.extra["serial"], msg)
         return (msg, kwargs)
+
+    def warn(self, msg, *args, **kwargs):
+        """Function call warper for warn() to warning()."""
+        super(AndroidDeviceLoggerAdapter, self).warning(msg, *args, **kwargs)
