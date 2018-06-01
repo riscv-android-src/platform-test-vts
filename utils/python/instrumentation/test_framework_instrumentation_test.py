@@ -21,6 +21,7 @@ from vts.utils.python.instrumentation import test_framework_instrumentation as t
 from vts.utils.python.instrumentation import test_framework_instrumentation_event as tfie
 from vts.utils.python.instrumentation import test_framework_instrumentation_test_submodule as tfits
 
+
 class TestFrameworkInstrumentationTest(unittest.TestCase):
     """Unit tests for test_framework_instrumentation module"""
 
@@ -46,9 +47,9 @@ class TestFrameworkInstrumentationTest(unittest.TestCase):
     def testEndAlreadyEnded(self):
         """Tests End command on already ended event."""
         event = tfi.Begin(self.category, self.name)
-        tfi.End(event)
+        event.End()
         self.assertIsNone(event.error)
-        tfi.End(event)
+        event.End()
         self.assertTrue(event.error)
 
     def testEndMatch(self):
@@ -66,6 +67,13 @@ class TestFrameworkInstrumentationTest(unittest.TestCase):
         tfits.TestFrameworkInstrumentationTestSubmodule().End(self.category, self.name)
         self.assertEqual(event.status, 2)
         self.assertIsNone(event.error)
+
+    def testCategories(self):
+        """Tests access to TestFrameworkInstrumentationCategories object"""
+        self.assertTrue(tfi.categories.Add(self.category, self.name))
+        self.assertFalse(tfi.categories.Add('', self.name))
+        self.assertFalse(tfi.categories.Add(None, self.name))
+        self.assertFalse(tfi.categories.Add('1a', self.name))
 
 
 if __name__ == "__main__":
