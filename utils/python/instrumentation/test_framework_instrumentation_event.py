@@ -31,18 +31,37 @@ ILLEGAL_CHARS = ':\t\r\n'
 event_stack = []
 
 
+def NormalizeNameCategory(name, category):
+    """Replaces illegal characters in name and category.
+
+    Illegal characters defined in ILLEGAL_CHARS will be replaced with '_'.
+
+    Args:
+        name: string
+        category: string
+
+    Returns:
+        a tuple (string, string), name and category
+    """
+    if set(ILLEGAL_CHARS) & set(category + name):
+        category = re.sub('|'.join(ILLEGAL_CHARS), '_', category)
+        name = re.sub('|'.join(ILLEGAL_CHARS), '_', name)
+
+    return name, category
+
+
 class TestFrameworkInstrumentationEvent(object):
     """An object that represents an event.
 
     Attributes:
         category: string, a category mark represents a high level event
                   category such as preparer setup and test execution.
+        error: string, None if no error. Otherwise contains error messages such
+               as duplicated Begin or End.
         name: string, a string to mark specific name of an event for human
               reading. Final performance analysis will mostly focus on category
               granularity instead of name granularity.
         status: int, 0 for not started, 1 for started, 2 for ended, 3 for removed.
-        error: string, None if no error. Otherwise contains error messages such
-               as duplicated Begin or End.
         _enable_logging: bool or None. Whether to put the event in logging.
                          Should be set to False when timing small pieces of code that could take
                          very short time to run.
@@ -60,18 +79,15 @@ class TestFrameworkInstrumentationEvent(object):
     _disable_subevent_logging = False
     # TODO(yuexima): add on/off toggle param for logging.
 
-    def __init__(self, category, name):
-        if set(ILLEGAL_CHARS) & set(category + name):
+    def __init__(self, name, category):
+        self.name, self.category = NormalizeNameCategory(name, category)
+
+        if (name, category) != (self.name, self.category):
             self.LogW('TestFrameworkInstrumentation: illegal character detected in '
-                          'category or name string. Provided category: %s, name: %s. '
-                          'Replacing them as "_"', category, name)
-            category = re.sub('|'.join(ILLEGAL_CHARS), '_', category)
-            name = re.sub('|'.join(ILLEGAL_CHARS), '_', name)
+                          'category or name string. Provided name: %s, category: %s. '
+                          'Replacing them as "_"', name, category)
 
-        self.category = category
-        self.name = name
-
-    def Match(self, category, name):
+    def Match(self, name, category):
         """Checks whether the given category and name matches this event."""
         return category == self.category and name == self.name
 
