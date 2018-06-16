@@ -101,6 +101,7 @@ def create(configs, start_services=True):
         ads = get_instances_with_configs(configs)
     connected_ads = list_adb_devices()
     for ad in ads:
+        ad.enable_vts_agent = start_services
         if ad.serial not in connected_ads:
             raise DoesNotExistError(("Android device %s is specified in config"
                                      " but is not attached.") % ad.serial)
@@ -1109,7 +1110,7 @@ class AndroidDevice(object):
                 host_command_port=self.host_command_port, adb=self.adb)
         if self.enable_sl4a:
             try:
-                self.startSl4aClient(eself.enable_sl4a_ed)
+                self.startSl4aClient(self.enable_sl4a_ed)
             except Exception as e:
                 self.log.exception("Failed to start SL4A!")
                 self.log.exception(e)
