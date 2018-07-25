@@ -82,7 +82,6 @@ class WebFeature(feature_utils.Feature):
             getattr(self, keys.ConfigKeys.KEY_TESTBED_NAME))
 
         if getattr(self, keys.ConfigKeys.IKEY_ENABLE_PROFILING, False):
-            logging.info("Profiling test")
             self.report_msg.test += "Profiling"
 
         self.report_msg.test_type = ReportMsg.VTS_HOST_DRIVEN_STRUCTURAL
@@ -147,6 +146,39 @@ class WebFeature(feature_utils.Feature):
         self.current_test_report_msg.name = test_name
         self.current_test_report_msg.start_timestamp = feature_utils.GetTimestamp(
         )
+
+    def AddApiCoverageReport(self, api_coverage_data_vec, isGlobal=True):
+        """Adds an API coverage report to the VtsReportMessage.
+
+        Translate each element in the give coverage data vector into a
+        ApiCoverageReportMessage within the report message.
+
+        Args:
+            api_coverage_data_vec: list of VTSApiCoverageData which contains
+                                   the metadata (e.g. package_name, version)
+                                   and the total/covered api names.
+            isGlobal: boolean, True if the coverage data is for the entire test,
+                      False if only for the current test case.
+        """
+
+        if not self.enabled:
+            return
+
+        if isGlobal:
+            report = self.report_msg
+        else:
+            report = self.current_test_report_msg
+
+        for api_coverage_data in api_coverage_data_vec:
+            api_coverage = report.api_coverage.add()
+            api_coverage.hal_interface.hal_package_name = api_coverage_data.package_name
+            api_coverage.hal_interface.hal_version_major = int(
+                api_coverage_data.version_major)
+            api_coverage.hal_interface.hal_version_minor = int(
+                api_coverage_data.version_minor)
+            api_coverage.hal_interface.hal_interface_name = api_coverage_data.interface_name
+            api_coverage.hal_api.extend(api_coverage_data.total_apis)
+            api_coverage.covered_hal_api.extend(api_coverage_data.covered_apis)
 
     def AddCoverageReport(self,
                           coverage_vec,
@@ -395,7 +427,7 @@ class WebFeature(feature_utils.Feature):
 
         # Handle case when runner fails, tests aren't executed
         if (not getattr(self, keys.ConfigKeys.RUN_AS_VTS_SELFTEST, False)
-            and executed and executed[-1].test_name == "setup_class"):
+                and executed and executed[-1].test_name == "setup_class"):
             # Test failed during setup, all tests were not executed
             start_index = 0
         else:
@@ -416,11 +448,11 @@ class WebFeature(feature_utils.Feature):
             build_id = str(build[keys.ConfigKeys.IKEY_BUILD_ID])
             self.report_msg.build_info.id = build_id
 
-        logging.info("_tearDownClass hook: start (username: %s)",
-                     getpass.getuser())
+        logging.debug("_tearDownClass hook: start (username: %s)",
+                      getpass.getuser())
 
         if len(self.report_msg.test_case) == 0:
-            logging.info("_tearDownClass hook: skip uploading (no test case)")
+            logging.warn("_tearDownClass hook: skip uploading (no test case)")
             return ''
 
         post_msg = ReportMsg.DashboardPostMessage()
@@ -430,10 +462,10 @@ class WebFeature(feature_utils.Feature):
 
         message_b = base64.b64encode(post_msg.SerializeToString())
 
-        logging.info('Result proto message generated. size: %s',
-                     len(message_b))
+        logging.debug('Result proto message generated. size: %s',
+                      len(message_b))
 
-        logging.info("_tearDownClass hook: status upload time stamp %s",
-                     str(self.report_msg.start_timestamp))
+        logging.debug("_tearDownClass hook: status upload time stamp %s",
+                      str(self.report_msg.start_timestamp))
 
         return message_b

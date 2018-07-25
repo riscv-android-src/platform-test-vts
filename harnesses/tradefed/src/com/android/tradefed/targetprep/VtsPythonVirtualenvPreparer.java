@@ -43,8 +43,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.Arrays;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.NoSuchElementException;
 import java.util.TreeSet;
 
@@ -74,10 +74,10 @@ public class VtsPythonVirtualenvPreparer implements IMultiTargetPreparer {
     private Collection<String> mScriptFiles = new TreeSet<>();
 
     @Option(name = "dep-module", description = "modules which need to be installed by pip")
-    protected Collection<String> mDepModules = new TreeSet<>();
+    protected Collection<String> mDepModules = new LinkedHashSet<>();
 
     @Option(name = "no-dep-module", description = "modules which should not be installed by pip")
-    private Collection<String> mNoDepModules = new TreeSet<>(Arrays.asList());
+    private Collection<String> mNoDepModules = new TreeSet<>();
 
     @Option(name = "python-version",
             description = "The version of a Python interpreter to use."
@@ -375,6 +375,8 @@ public class VtsPythonVirtualenvPreparer implements IMultiTargetPreparer {
                 CommandResult c = getRunUtil().runTimedCmd(BASE_TIMEOUT, cmd);
                 if (c.getStatus() != CommandStatus.SUCCESS) {
                     CLog.e(String.format("Failed to create virtualenv with : %s.", virtualEnvPath));
+                    CLog.e(String.format("Exit code: %s, stdout: %s, stderr: %s", c.getStatus(),
+                            c.getStdout(), c.getStderr()));
                     throw new TargetSetupError("Failed to create virtualenv", mDescriptor);
                 }
             } catch (IOException | RuntimeException e) {

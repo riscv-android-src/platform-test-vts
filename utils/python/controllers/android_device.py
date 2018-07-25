@@ -63,6 +63,12 @@ MAX_AGENT_CONNECT_RETRIES = 10
 # the slot for vbmeta.img
 _FASTBOOT_VAR_HAS_VBMETA = "has-slot:vbmeta"
 
+# the name of a system property which tells whether to stop properly configured
+# native servers where properly configured means a server's init.rc is
+# configured to stop when that property's value is 1.
+SYSPROP_VTS_NATIVE_SERVER = "vts.native_server.on"
+# Maximum time in seconds to wait for process/system status change.
+WAIT_TIMEOUT_SEC = 120
 
 class AndroidDeviceError(signals.ControllerError):
     pass
@@ -93,6 +99,7 @@ def create(configs, start_services=True):
         ads = get_instances_with_configs(configs)
     connected_ads = list_adb_devices()
     for ad in ads:
+        ad.enable_vts_agent = start_services
         if ad.serial not in connected_ads:
             raise DoesNotExistError(("Android device %s is specified in config"
                                      " but is not attached.") % ad.serial)
@@ -802,7 +809,7 @@ class AndroidDevice(object):
 
     def startFramework(self,
                        wait_for_completion=True,
-                       wait_for_completion_timeout=120):
+                       wait_for_completion_timeout=WAIT_TIMEOUT_SEC):
         """Starts Android framework.
 
         By default this function will wait for framework starting process to
@@ -817,20 +824,27 @@ class AndroidDevice(object):
         Returns:
             bool, True if framework start success. False otherwise.
         """
-        logging.info("starting Android framework")
+        logging.debug("starting Android framework")
         self.adb.shell("start")
 
         if wait_for_completion:
-            return self.waitForFrameworkStartComplete(wait_for_completion_timeout)
+            if not self.waitForFrameworkStartComplete(
+                    wait_for_completion_timeout):
+                return False
 
+        logging.info("Android framework started.")
         return True
 
-    def start(self):
+    def start(self, start_native_server=True):
         """Starts Android framework and waits for ACTION_BOOT_COMPLETED.
 
+        Args:
+            start_native_server: bool, whether to start the native server.
         Returns:
             bool, True if framework start success. False otherwise.
         """
+        if start_native_server:
+            self.startNativeServer()
         return self.startFramework()
 
     def stopFramework(self):
@@ -838,19 +852,24 @@ class AndroidDevice(object):
 
         Method will block until stop is complete.
         """
-        logging.info("stopping Android framework")
+        logging.debug("stopping Android framework")
         self.adb.shell("stop")
         self.setProp("sys.boot_completed", 0)
         logging.info("Android framework stopped")
 
-    def stop(self):
+    def stop(self, stop_native_server=False):
         """Stops Android framework.
 
         Method will block until stop is complete.
+
+        Args:
+            stop_native_server: bool, whether to stop the native server.
         """
         self.stopFramework()
+        if stop_native_server:
+            self.stopNativeServer()
 
-    def waitForFrameworkStartComplete(self, timeout_secs=120):
+    def waitForFrameworkStartComplete(self, timeout_secs=WAIT_TIMEOUT_SEC):
         """Wait for Android framework to complete starting.
 
         Args:
@@ -863,13 +882,66 @@ class AndroidDevice(object):
         start = time.time()
 
         # First, wait for boot completion and checks
-        self.waitForBootCompletion(timeout_secs)
+        if not self.waitForBootCompletion(timeout_secs):
+            return False
 
         while not self.isFrameworkRunning(check_boot_completion=False):
             if time.time() - start >= timeout_secs:
                 logging.error("Timeout while waiting for framework to start.")
                 return False
             time.sleep(1)
+        return True
+
+    def startNativeServer(self):
+        """Starts all native servers."""
+        self.setProp(SYSPROP_VTS_NATIVE_SERVER, "0")
+
+    def stopNativeServer(self):
+        """Stops all native servers."""
+        self.setProp(SYSPROP_VTS_NATIVE_SERVER, "1")
+
+    def isProcessRunning(self, process_name):
+        """Check whether the given process is running.
+        Args:
+            process_name: string, name of the process.
+
+        Returns:
+            bool, True if the process is running.
+
+        Raises:
+            AndroidDeviceError, if ps command failed.
+        """
+        logging.debug("Checking process %s", process_name)
+        cmd_result = self.adb.shell.Execute("ps -A")
+        if cmd_result[const.EXIT_CODE][0] != 0:
+            logging.error("ps command failed (exit code: %s",
+                          cmd_result[const.EXIT_CODE][0])
+            raise AndroidDeviceError("ps command failed.")
+        if (process_name not in cmd_result[const.STDOUT][0]):
+            logging.debug("Process %s not running", process_name)
+            return False
+        return True
+
+    def waitForProcessStop(self, process_names, timeout_secs=WAIT_TIMEOUT_SEC):
+        """Wait until the given process is stopped or timeout.
+
+        Args:
+            process_names: list of string, name of the processes.
+            timeout_secs: int, timeout in secs.
+
+        Returns:
+            bool, True if the process stopped within timeout.
+        """
+        if process_names:
+            for process_name in process_names:
+                start = time.time()
+                while self.isProcessRunning(process_name):
+                    if time.time() - start >= timeout_secs:
+                        logging.error(
+                            "Timeout while waiting for process %s stop.",
+                            process_name)
+                        return False
+                    time.sleep(1)
 
         return True
 
@@ -972,7 +1044,7 @@ class AndroidDevice(object):
             self.startVtsAgent()
             self.device_command_port = int(
                 self.adb.shell("cat /data/local/tmp/vts_tcp_server_port"))
-            logging.info("device_command_port: %s", self.device_command_port)
+            logging.debug("device_command_port: %s", self.device_command_port)
             if not self.host_command_port:
                 self.host_command_port = adb.get_available_host_port()
             self.adb.tcp_forward(self.host_command_port,
@@ -984,7 +1056,7 @@ class AndroidDevice(object):
                 host_command_port=self.host_command_port, adb=self.adb)
         if self.enable_sl4a:
             try:
-                self.startSl4aClient(eself.enable_sl4a_ed)
+                self.startSl4aClient(self.enable_sl4a_ed)
             except Exception as e:
                 self.log.exception("Failed to start SL4A!")
                 self.log.exception(e)
@@ -1043,8 +1115,8 @@ class AndroidDevice(object):
         log_severity = getattr(self, keys.ConfigKeys.KEY_LOG_SEVERITY, "INFO")
         bits = ['64', '32'] if self.is64Bit else ['32']
         for bitness in bits:
-            vts_agent_log_path = os.path.join(self.log_path,
-                'vts_agent_%s_%s.log' % (bitness, self.serial))
+            vts_agent_log_path = os.path.join(
+                self.log_path, 'vts_agent_%s_%s.log' % (bitness, self.serial))
             cmd = ('adb -s {s} shell LD_LIBRARY_PATH={path}/{bitness} '
                    '{path}/{bitness}/vts_hal_agent{bitness} '
                    '--hal_driver_path_32={path}/32/vts_hal_driver32 '
@@ -1132,8 +1204,8 @@ class AndroidDevice(object):
             if not self.sl4a_host_port or not adb.is_port_available(
                     self.sl4a_host_port):
                 self.sl4a_host_port = adb.get_available_host_port()
-            logging.info("sl4a port host %s target %s", self.sl4a_host_port,
-                         self.sl4a_target_port)
+            logging.debug("sl4a port host %s target %s", self.sl4a_host_port,
+                          self.sl4a_target_port)
             try:
                 self.adb.tcp_forward(self.sl4a_host_port,
                                      self.sl4a_target_port)
@@ -1219,13 +1291,13 @@ class AndroidDevice(object):
     @property
     def droid(self):
         """The default SL4A session to the device if exist, None otherwise."""
-        if not hasattr(self,
-                       "_sl4a_sessions") or len(self._sl4a_sessions) == 0:
+        if not hasattr(self, "_sl4a_sessions") or len(
+                self._sl4a_sessions) == 0:
             return None
         try:
             session_id = sorted(self._sl4a_sessions)[0]
             result = self._sl4a_sessions[session_id][0]
-            logging.info("key %s val %s", session_id, result)
+            logging.debug("key %s val %s", session_id, result)
             return result
         except IndexError as e:
             logging.exception(e)
@@ -1234,8 +1306,8 @@ class AndroidDevice(object):
     @property
     def droids(self):
         """A list of the active SL4A sessions on this device."""
-        if not hasattr(self,
-                       "_sl4a_sessions") or len(self._sl4a_sessions) == 0:
+        if not hasattr(self, "_sl4a_sessions") or len(
+                self._sl4a_sessions) == 0:
             return None
         keys = sorted(self._sl4a_sessions)
         results = []
@@ -1246,11 +1318,11 @@ class AndroidDevice(object):
     @property
     def ed(self):
         """The default SL4A session to the device if exist, None otherwise."""
-        if (not hasattr(self, "_sl4a_event_dispatchers") or
-                len(self._sl4a_event_dispatchers) == 0):
+        if (not hasattr(self, "_sl4a_event_dispatchers")
+                or len(self._sl4a_event_dispatchers) == 0):
             return None
-        logging.info("self._sl4a_event_dispatchers: %s",
-                     self._sl4a_event_dispatchers)
+        logging.debug("self._sl4a_event_dispatchers: %s",
+                      self._sl4a_event_dispatchers)
         try:
             session_id = sorted(self._sl4a_event_dispatchers)[0]
             return self._sl4a_event_dispatchers[session_id]

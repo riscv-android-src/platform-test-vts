@@ -87,7 +87,8 @@ class MirrorObject(object):
                            driver_type,
                            target_class,
                            target_type,
-                           target_version,
+                           target_version_major,
+                           target_version_minor,
                            target_package="",
                            target_filename=None,
                            target_component_name=None,
@@ -102,7 +103,10 @@ class MirrorObject(object):
             driver_type: type of
             target_class: string, the target class name (e.g., lib).
             target_type: string, the target type name (e.g., light, camera).
-            target_version: float, the target component version (e.g., 1.0).
+            target_version_major:
+              int, the target component major version (e.g. 1.0 -> 1).
+            target_version_minor:
+              int, the target component minor version (e.g. 1.0 -> 0).
             target_basepaths: list of strings, the paths to look for target
                              files in. Default is _DEFAULT_TARGET_BASE_PATHS.
             target_package: . separated string (e.g., a.b.c) to denote the
@@ -111,21 +115,20 @@ class MirrorObject(object):
             handler_name: string, the name of the handler. target_type is used
                           by default.
             bits: integer, processor architecture indicator: 32 or 64.
-
         Raises:
             errors.ComponentLoadingError is raised when error occurs trying to
             create a MirrorObject.
         """
         if bits not in [32, 64]:
-            raise error.ComponentLoadingError("Invalid value for bits: %s" %
-                                              bits)
+            raise error.ComponentLoadingError(
+                "Invalid value for bits: %s" % bits)
         if not handler_name:
             handler_name = target_type
         if not service_name:
             service_name = "vts_driver_%s" % handler_name
 
         # Launch the corresponding driver of the requested HAL on the target.
-        logging.info("Init the driver service for %s", target_type)
+        logging.debug("Init the driver service for %s", target_type)
         target_class_id = COMPONENT_CLASS_DICT[target_class.lower()]
         target_type_id = COMPONENT_TYPE_DICT[target_type.lower()]
 
@@ -136,7 +139,8 @@ class MirrorObject(object):
             file_path=target_filename,
             target_class=target_class_id,
             target_type=target_type_id,
-            target_version=target_version,
+            target_version_major=target_version_major,
+            target_version_minor=target_version_minor,
             target_package=target_package,
             target_component_name=target_component_name,
             hw_binder_service_name=hw_binder_service_name)

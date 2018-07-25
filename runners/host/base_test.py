@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import sys
+import threading
 
 from vts.proto import VtsReportMessage_pb2 as ReportMsg
 from vts.runners.host import asserts
@@ -44,17 +45,20 @@ from vts.utils.python.web import web_utils
 from acts import signals as acts_signals
 
 # Macro strings for test result reporting
-TEST_CASE_TOKEN = "[Test Case]"
-RESULT_LINE_TEMPLATE = TEST_CASE_TOKEN + " %s %s"
+TEST_CASE_TEMPLATE = "[Test Case] %s %s"
+RESULT_LINE_TEMPLATE = TEST_CASE_TEMPLATE + " %s"
 STR_TEST = "test"
 STR_GENERATE = "generate"
+TEARDOWN_CLASS_TIMEOUT_SECS = 30
 _REPORT_MESSAGE_FILE_NAME = "report_proto.msg"
-_BUG_REPORT_FILE_PREFIX = "bugreport"
+_BUG_REPORT_FILE_PREFIX = "bugreport_"
 _BUG_REPORT_FILE_EXTENSION = ".zip"
-_LOGCAT_FILE_PREFIX = "logcat"
+_DEFAULT_TEST_TIMEOUT_SECS = 60 * 3
+_LOGCAT_FILE_PREFIX = "logcat_"
 _LOGCAT_FILE_EXTENSION = ".txt"
 _ANDROID_DEVICES = '_android_devices'
 _REASON_TO_SKIP_ALL_TESTS = '_reason_to_skip_all_tests'
+_SETUP_RETRY_NUMBER = 5
 # the name of a system property which tells whether to stop properly configured
 # native servers where properly configured means a server's init.rc is
 # configured to stop when that property's value is 1.
@@ -89,6 +93,11 @@ class BaseTestClass(object):
         _current_record: A records.TestResultRecord object for the test case
                          currently being executed. If no test is running, this
                          should be None.
+        _interrupted: Whether the test execution has been interrupted.
+        _interrupt_lock: The threading.Lock object that protects _interrupted.
+        _timer: The threading.Timer object that interrupts main thread when
+                timeout.
+        timeout: A float, the timeout, in seconds, configured for this object.
         include_filer: A list of string, each representing a test case name to
                        include.
         exclude_filer: A list of string, each representing a test case name to
@@ -117,6 +126,22 @@ class BaseTestClass(object):
         self.results = records.TestResult()
         self.log = logger.LoggerProxy()
         self._current_record = None
+
+        # Timeout
+        self._interrupted = False
+        self._interrupt_lock = threading.Lock()
+        self._timer = None
+        self.timeout = self.getUserParam(
+            keys.ConfigKeys.KEY_TEST_TIMEOUT,
+            default_value=_DEFAULT_TEST_TIMEOUT_SECS * 1000.0)
+        try:
+            self.timeout = float(self.timeout) / 1000.0
+        except (TypeError, ValueError):
+            logging.error("Cannot parse timeout: %s", self.timeout)
+            self.timeout = _DEFAULT_TEST_TIMEOUT_SECS
+        if self.timeout <= 0:
+            logging.error("Invalid timeout: %s", self.timeout)
+            self.timeout = _DEFAULT_TEST_TIMEOUT_SECS
 
         # Setup test filters
         self.include_filter = self.getUserParam(
@@ -390,51 +415,43 @@ class BaseTestClass(object):
         """Proxy function to guarantee the base implementation of setUpClass
         is called.
         """
+        self.resetTimeout(self.timeout)
+
         if not precondition_utils.MeetFirstApiLevelPrecondition(self):
             self.skipAllTests("The device's first API level doesn't meet the "
                               "precondition.")
+        for device in self.android_devices:
+            if not precondition_utils.CheckFeaturePrecondition(self, device):
+                self.skipAllTests("Precondition feature check fail.")
 
-        if (self.getUserParam(keys.ConfigKeys.IKEY_DISABLE_FRAMEWORK,
-                              default_value=False) or
-            # @Deprecated Legacy configuration option name.
-            self.getUserParam(keys.ConfigKeys.IKEY_BINARY_TEST_DISABLE_FRAMEWORK,
-                              default_value=False)):
+        if (self.getUserParam(
+                keys.ConfigKeys.IKEY_DISABLE_FRAMEWORK, default_value=False) or
+                # @Deprecated Legacy configuration option name.
+                self.getUserParam(
+                    keys.ConfigKeys.IKEY_BINARY_TEST_DISABLE_FRAMEWORK,
+                    default_value=False)):
+            stop_native_server = (
+                self.getUserParam(
+                    keys.ConfigKeys.IKEY_STOP_NATIVE_SERVERS,
+                    default_value=False) or
+                # @Deprecated Legacy configuration option name.
+                self.getUserParam(
+                    keys.ConfigKeys.IKEY_BINARY_TEST_STOP_NATIVE_SERVERS,
+                    default_value=False))
             # Disable the framework if requested.
             for device in self.android_devices:
-                device.stop()
+                device.stop(stop_native_server)
         else:
             # Enable the framework if requested.
             for device in self.android_devices:
                 device.start()
 
-        if (self.getUserParam(keys.ConfigKeys.IKEY_STOP_NATIVE_SERVERS,
-                              default_value=False) or
-            # @Deprecated Legacy configuration option name.
-            self.getUserParam(keys.ConfigKeys.IKEY_BINARY_TEST_STOP_NATIVE_SERVERS,
-                              default_value=False)):
-            for device in self.android_devices:
-                logging.debug("Stops all properly configured native servers "
-                              "on device %s", device.serial)
-                results = device.setProp(SYSPROP_VTS_NATIVE_SERVER, "1")
-                native_server_process_names = self.getUserParam(
+        # Wait for the native service process to stop.
+        native_server_process_names = self.getUserParam(
                     keys.ConfigKeys.IKEY_NATIVE_SERVER_PROCESS_NAME,
                     default_value=[])
-                if native_server_process_names:
-                    for native_server_process_name in native_server_process_names:
-                        while True:
-                            logging.info("Checking process %s",
-                                         native_server_process_name)
-                            cmd_result = device.shell.Execute("ps -A")
-                            if cmd_result[const.EXIT_CODE][0] != 0:
-                                logging.error("ps command failed (exit code: %s",
-                                              cmd_result[const.EXIT_CODE][0])
-                                break
-                            if (native_server_process_name not in cmd_result[
-                                    const.STDOUT][0]):
-                                logging.debug("Process %s not running",
-                                             native_server_process_name)
-                                break
-                            time.sleep(1)
+        for device in self.android_devices:
+            device.waitForProcessStop(native_server_process_names)
 
         return self.setUpClass()
 
@@ -455,6 +472,8 @@ class BaseTestClass(object):
         is called.
         """
         ret = self.tearDownClass()
+
+        self.resetTimeout(TEARDOWN_CLASS_TIMEOUT_SECS)
         if self.log_uploading.enabled:
             self.log_uploading.UploadLogs()
         if self.web.enabled:
@@ -472,16 +491,6 @@ class BaseTestClass(object):
         with open(report_proto_path, "wb") as f:
             f.write(message_b)
 
-        if getattr(self, keys.ConfigKeys.IKEY_BINARY_TEST_STOP_NATIVE_SERVERS,
-                   False):
-            logging.debug("Restarts all properly configured native servers.")
-            for device in self.android_devices:
-                try:
-                    self.device.setProp(SYSPROP_VTS_NATIVE_SERVER, "0")
-                except adb.AdbError:
-                    logging.error("failed to restore native servers for device "
-                                  + device.serial)
-
         return ret
 
     def tearDownClass(self):
@@ -491,6 +500,40 @@ class BaseTestClass(object):
         Implementation is optional.
         """
         pass
+
+    def interrupt(self):
+        """Interrupts test execution and terminates process."""
+        with self._interrupt_lock:
+            if self._interrupted:
+                logging.warning("Cannot interrupt more than once.")
+                return
+            self._interrupted = True
+
+        utils.stop_current_process(TEARDOWN_CLASS_TIMEOUT_SECS)
+
+    def resetTimeout(self, timeout):
+        """Restarts the timer that will interrupt the main thread.
+
+        This class starts the timer before setUpClass. As the timeout depends
+        on number of generated tests, the subclass can restart the timer.
+
+        Args:
+            timeout: A float, wait time in seconds before interrupt.
+        """
+        with self._interrupt_lock:
+            if self._interrupted:
+                logging.warning("Test execution has been interrupted. "
+                                "Cannot reset timeout.")
+                return
+
+        if self._timer:
+            logging.info("Cancel timer.")
+            self._timer.cancel()
+
+        logging.info("Start timer with timeout=%ssec.", timeout)
+        self._timer = threading.Timer(timeout, self.interrupt)
+        self._timer.daemon = True
+        self._timer.start()
 
     def _testEntry(self, test_record):
         """Internal function to be called upon entry of a test case.
@@ -548,7 +591,8 @@ class BaseTestClass(object):
         record = self._current_record
         logging.error(record.details)
         begin_time = logger.epochToLogLineTimestamp(record.begin_time)
-        logging.info(RESULT_LINE_TEMPLATE, record.test_name, record.result)
+        logging.error(RESULT_LINE_TEMPLATE, self.results.progressStr,
+                      record.test_name, record.result)
         if self.web.enabled:
             self.web.SetTestResult(ReportMsg.TEST_CASE_RESULT_FAIL)
         self.onFail(record.test_name, begin_time)
@@ -577,7 +621,8 @@ class BaseTestClass(object):
         msg = record.details
         if msg:
             logging.debug(msg)
-        logging.info(RESULT_LINE_TEMPLATE, test_name, record.result)
+        logging.info(RESULT_LINE_TEMPLATE, self.results.progressStr,
+                     test_name, record.result)
         if self.web.enabled:
             self.web.SetTestResult(ReportMsg.TEST_CASE_RESULT_PASS)
         self.onPass(test_name, begin_time)
@@ -599,7 +644,8 @@ class BaseTestClass(object):
         record = self._current_record
         test_name = record.test_name
         begin_time = logger.epochToLogLineTimestamp(record.begin_time)
-        logging.info(RESULT_LINE_TEMPLATE, test_name, record.result)
+        logging.info(RESULT_LINE_TEMPLATE, self.results.progressStr,
+                     test_name, record.result)
         logging.debug("Reason to skip: %s", record.details)
         if self.web.enabled:
             self.web.SetTestResult(ReportMsg.TEST_CASE_RESULT_SKIP)
@@ -787,7 +833,7 @@ class BaseTestClass(object):
         is_silenced = False
         tr_record = records.TestResultRecord(test_name, self.test_module_name)
         tr_record.testBegin()
-        logging.info("%s %s", TEST_CASE_TOKEN, test_name)
+        logging.info(TEST_CASE_TEMPLATE, self.results.progressStr, test_name)
         verdict = None
         finished = False
         try:
@@ -1042,16 +1088,33 @@ class BaseTestClass(object):
         Returns:
             The test results object of this class.
         """
-        # Setup for the class.
-        try:
-            if self._setUpClass() is False:
-                raise signals.TestFailure(
-                    "Failed to setup %s." % self.test_module_name)
-        except Exception as e:
-            logging.exception("Failed to setup %s.", self.test_module_name)
-            self.results.failClass(self.test_module_name, e)
-            self._exec_func(self._tearDownClass)
-            return self.results
+        # Setup for the class with retry.
+        for i in xrange(_SETUP_RETRY_NUMBER):
+            setup_done = False
+            caught_exception = None
+            try:
+                if self._setUpClass() is False:
+                    raise signals.TestFailure(
+                        "Failed to setup %s." % self.test_module_name)
+                else:
+                    setup_done = True
+            except Exception as e:
+                caught_exception = e
+                logging.exception("Failed to setup %s.", self.test_module_name)
+            finally:
+                if setup_done:
+                    break
+                elif not caught_exception or i + 1 == _SETUP_RETRY_NUMBER:
+                    self.results.failClass(self.test_module_name,
+                                           caught_exception)
+                    self._exec_func(self._tearDownClass)
+                    return self.results
+                else:
+                    # restart services before retry setup.
+                    for device in self.android_devices:
+                        logging.info("restarting service on device %s", device.serial)
+                        device.stopServices()
+                        device.startServices()
 
         # Run tests in order.
         try:
