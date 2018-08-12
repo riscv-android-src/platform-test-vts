@@ -25,42 +25,58 @@ class ResourceFmqMirror(mirror_object.MirrorObject):
     """This is a class that mirrors FMQ resource allocated on the target side.
 
     Attributes:
-        _client: the TCP client instance.
+        SUPPORTED_SCALAR_TYPES: set, contains all scalar types supported by FMQ.
+                                If the type of FMQ is one of those, this class
+                                prepares the write data from caller provided
+                                Python data.
+        _client: VtsTcpClient, the TCP client instance.
         _queue_id: int, used to identify the queue object on the target side.
         _data_type: type of data in the queue.
         _sync: bool, whether the queue is synchronized.
     """
 
-    def __init__(self, client, queue_id=-1):
-        super(ResourceFmqMirror, self).__init__(client)
-        self._queue_id = queue_id
+    SUPPORTED_SCALAR_TYPES = {
+        "uint8_t", "int8_t", "uint16_t", "int16_t", "uint32_t", "int32_t",
+        "uint64_t", "int64_t", "bool_t", "double_t"
+    }
 
-    def _create(self, data_type, sync, queue_id, queue_size, blocking,
-                reset_pointers):
-        """Initiate a fast message queue object on the target side,
-           and stores the queue_id in the class attribute.
-           User should not directly call this method because it will overwrite
-           the original queue_id stored in the mirror object, leaving that
-           queue object out of reference.
-           User should always call InitFmq() in mirror_tracker.py to obtain a
-           new queue object.
+    def __init__(self, data_type, sync, client, queue_id=-1):
+        """Initialize a FMQ mirror.
 
         Args:
-            data_type: string, type of data in the queue (e.g. "uint32_t", "int16_t").
+            data_type: string, type of data in the queue
+                       (e.g. "uint32_t", "int16_t").
             sync: bool, whether queue is synchronized (only has one reader).
+            client: VtsTcpClient, specifies the session that this mirror use.
+            queue_id: int, identifies the queue on the target side.
+                      Optional if caller initializes a new FMQ mirror.
+        """
+        super(ResourceFmqMirror, self).__init__(client)
+        self._data_type = data_type
+        self._sync = sync
+        self._queue_id = queue_id
+
+    def _create(self, queue_id, queue_size, blocking, reset_pointers):
+        """Initiate a fast message queue object on the target side.
+
+        This method registers a FMQ object on the target side, and stores
+        the queue_id in the class attribute.
+        Users should not directly call this method because it will overwrite
+        the original queue_id stored in the mirror object, leaving that
+        queue object out of reference.
+        Users should always call InitFmq() in mirror_tracker.py to obtain a
+        new queue object.
+
+        Args:
             queue_id: int, identifies the message queue object on the target side.
             queue_size: int, size of the queue.
             blocking: bool, whether blocking is enabled in the queue.
             reset_pointers: bool, whether to reset read/write pointers when
               creating a message queue object based on an existing message queue.
         """
-        # Sets some configuration for the current resource mirror.
-        self._data_type = data_type
-        self._sync = sync
-
         # Prepare arguments.
         request_msg = self._createTemplateRequestMessage(
-            ResControlMsg.FMQ_PROTO_CREATE, queue_id)
+            ResControlMsg.FMQ_CREATE, queue_id)
         request_msg.queue_size = queue_size
         request_msg.blocking = blocking
         request_msg.reset_pointers = reset_pointers
@@ -90,7 +106,7 @@ class ResourceFmqMirror(mirror_object.MirrorObject):
         # Prepare arguments.
         del data[:]
         request_msg = self._createTemplateRequestMessage(
-            ResControlMsg.FMQ_PROTO_READ, self._queue_id)
+            ResControlMsg.FMQ_READ, self._queue_id)
         request_msg.read_data_size = data_size
 
         # Send and receive data.
@@ -120,7 +136,7 @@ class ResourceFmqMirror(mirror_object.MirrorObject):
         # Prepare arguments.
         del data[:]
         request_msg = self._createTemplateRequestMessage(
-            ResControlMsg.FMQ_PROTO_READ_BLOCKING, self._queue_id)
+            ResControlMsg.FMQ_READ_BLOCKING, self._queue_id)
         request_msg.read_data_size = data_size
         request_msg.time_out_nanos = time_out_nanos
 
@@ -146,8 +162,11 @@ class ResourceFmqMirror(mirror_object.MirrorObject):
         """
         # Prepare arguments.
         request_msg = self._createTemplateRequestMessage(
-            ResControlMsg.FMQ_PROTO_WRITE, self._queue_id)
-        self._prepareWriteData(request_msg, data[:data_size])
+            ResControlMsg.FMQ_WRITE, self._queue_id)
+        prepare_result = self._prepareWriteData(request_msg, data[:data_size])
+        if not prepare_result:
+            # Prepare write data failure, error logged in _prepareWriteData().
+            return False
 
         # Send and receive data.
         fmq_response = self._client.SendFmqRequest(request_msg)
@@ -173,8 +192,11 @@ class ResourceFmqMirror(mirror_object.MirrorObject):
         """
         # Prepare arguments.
         request_msg = self._createTemplateRequestMessage(
-            ResControlMsg.FMQ_PROTO_WRITE_BLOCKING, self._queue_id)
-        self._prepareWriteData(request_msg, data[:data_size])
+            ResControlMsg.FMQ_WRITE_BLOCKING, self._queue_id)
+        prepare_result = self._prepareWriteData(request_msg, data[:data_size])
+        if not prepare_result:
+            # Prepare write data failure, error logged in _prepareWriteData().
+            return False
         request_msg.time_out_nanos = time_out_nanos
 
         # Send and receive data.
@@ -184,53 +206,53 @@ class ResourceFmqMirror(mirror_object.MirrorObject):
         return False
 
     def availableToWrite(self):
-        """Gets space available to write in the queue.
+        """Get space available to write in the queue.
 
         Returns:
             int, number of slots available.
         """
         # Prepare arguments.
         request_msg = self._createTemplateRequestMessage(
-            ResControlMsg.FMQ_PROTO_AVAILABLE_WRITE, self._queue_id)
+            ResControlMsg.FMQ_AVAILABLE_WRITE, self._queue_id)
 
         # Send and receive data.
         return self._processUtilMethod(request_msg)
 
     def availableToRead(self):
-        """Gets number of items available to read.
+        """Get number of items available to read.
 
         Returns:
             int, number of items.
         """
         # Prepare arguments.
         request_msg = self._createTemplateRequestMessage(
-            ResControlMsg.FMQ_PROTO_AVAILABLE_READ, self._queue_id)
+            ResControlMsg.FMQ_AVAILABLE_READ, self._queue_id)
 
         # Send and receive data.
         return self._processUtilMethod(request_msg)
 
     def getQuantumSize(self):
-        """Gets size of item in the queue.
+        """Get size of item in the queue.
 
         Returns:
             int, size of item.
         """
         # Prepare arguments.
         request_msg = self._createTemplateRequestMessage(
-            ResControlMsg.FMQ_PROTO_GET_QUANTUM_SIZE, self._queue_id)
+            ResControlMsg.FMQ_GET_QUANTUM_SIZE, self._queue_id)
 
         # send and receive data
         return self._processUtilMethod(request_msg)
 
     def getQuantumCount(self):
-        """Gets number of items that fit in the queue.
+        """Get number of items that fit in the queue.
 
         Returns:
             int, number of items.
         """
         # Prepare arguments.
         request_msg = self._createTemplateRequestMessage(
-            ResControlMsg.FMQ_PROTO_GET_QUANTUM_COUNT, self._queue_id)
+            ResControlMsg.FMQ_GET_QUANTUM_COUNT, self._queue_id)
 
         # Send and receive data.
         return self._processUtilMethod(request_msg)
@@ -243,7 +265,7 @@ class ResourceFmqMirror(mirror_object.MirrorObject):
         """
         # Prepare arguments.
         request_msg = self._createTemplateRequestMessage(
-            ResControlMsg.FMQ_PROTO_IS_VALID, self._queue_id)
+            ResControlMsg.FMQ_IS_VALID, self._queue_id)
 
         # Send and receive data.
         fmq_response = self._client.SendFmqRequest(request_msg)
@@ -251,13 +273,32 @@ class ResourceFmqMirror(mirror_object.MirrorObject):
             return fmq_response.success
         return False
 
-    def getQueueId(self):
+    @property
+    def queueId(self):
         """Gets the id assigned from the target side.
 
         Returns:
             int, id of the queue.
         """
         return self._queue_id
+
+    @property
+    def dataType(self):
+        """Get the type of data of this FMQ mirror.
+
+        Returns:
+            string, type of data in the queue
+        """
+        return self._data_type
+
+    @property
+    def sync(self):
+        """Get the synchronization option of this FMQ mirror.
+
+        Returns:
+            bool, true if the queue is synchronized (only has one reader).
+        """
+        return self._sync
 
     def _createTemplateRequestMessage(self, operation, queue_id):
         """Creates a template FmqRequestMessage with common arguments among
@@ -279,22 +320,42 @@ class ResourceFmqMirror(mirror_object.MirrorObject):
         request_msg.queue_id = queue_id
         return request_msg
 
-    # Converts a python list into protobuf message.
-    # TODO: Consider use py2pb once we know how to support user-defined types.
-    #       This method only supports primitive types like int32_t, bool_t.
     def _prepareWriteData(self, request_msg, data):
-        """Prepares write data by converting python list into
-           repeated protobuf field.
+        """Converts python list to repeated protobuf field.
+
+        If the type of data in the queue is a supported scalar, caller can
+        directly supply the python native value. Otherwise, caller needs to
+        supply a list of VariableSpecificationMessage.
 
         Args:
-            request_msg: FmqRequestMessage, arguments for a FMQ operation request.
-            data: list, list of data items.
+            request_msg: FmqRequestMessage, arguments for a FMQ operation
+                         request.
+            data: VariableSpecificationMessage list or a list of scalar values.
+                  If the type of FMQ is scalar type, caller can directly
+                  specify the Python scalar data. Otherwise, caller has to
+                  provide each item as VariableSpecificationMessage.
+
+        Returns:
+            bool, true if preparation succeeds, false otherwise.
+            This function can fail if caller doesn't provide a list of
+            VariableSpecificationMessage when type of data in the queue
+            is not a supported scalar type.
         """
         for curr_value in data:
             new_message = request_msg.write_data.add()
-            new_message.type = CompSpecMsg.TYPE_SCALAR
-            new_message.scalar_type = self._data_type
-            setattr(new_message.scalar_value, self._data_type, curr_value)
+            if isinstance(curr_value,
+                          CompSpecMsg.VariableSpecificationMessage):
+                new_message.CopyFrom(curr_value)
+            elif self._data_type in self.SUPPORTED_SCALAR_TYPES:
+                new_message.type = CompSpecMsg.TYPE_SCALAR
+                new_message.scalar_type = self._data_type
+                setattr(new_message.scalar_value, self._data_type, curr_value)
+            else:
+                logging.error("Need to provide VariableSpecificationMessage " +
+                              "if type of data in the queue is not a " +
+                              "supported scalar type.")
+                return False
+        return True
 
     def _extractReadData(self, response_msg, data):
         """Extracts read data from the response message returned by client.
@@ -554,7 +615,8 @@ class ResourceHidlMemoryMirror(mirror_object.MirrorObject):
                           self._mem_id)
         return -1
 
-    def getMemId(self):
+    @property    
+    def memId(self):
         """Gets the id assigned from the target side.
 
         Returns:
@@ -579,4 +641,146 @@ class ResourceHidlMemoryMirror(mirror_object.MirrorObject):
         request_msg = ResControlMsg.HidlMemoryRequestMessage()
         request_msg.operation = operation
         request_msg.mem_id = self._mem_id
+        return request_msg
+
+
+class ResourceHidlHandleMirror(mirror_object.MirrorObject):
+    """This class mirrors hidl_handle resource allocated on the target side.
+
+    TODO: support more than file types in the future, e.g. socket, pipe.
+
+    Attributes:
+        _client: the TCP client instance.
+        _handle_id: int, used to identify the handle object on the target side.
+    """
+
+    def __init__(self, client, handle_id=-1):
+        super(ResourceHidlHandleMirror, self).__init__(client)
+        self._handle_id = handle_id
+
+    def CleanUp(self):
+        """Close open file descriptors on target-side drivers.
+
+        Developers can call this method to close open file descriptors
+        in all handle objects.
+        Note: This method needs to be called before self._client
+        is disconnected. self._client is most likely initialized in
+        one of the hal_mirror.
+        """
+        request_msg = self._createTemplateRequestMessage(
+            ResControlMsg.HANDLE_PROTO_DELETE)
+        self._client.SendHidlHandleRequest(request_msg)
+
+    def _createHandleForSingleFile(self, filepath, mode, int_data):
+        """Initiate a hidl_handle object containing a single file descriptor.
+
+        This method stores the handle_id in the class attribute.
+        Users should not directly call this method to create a new
+        handle object, because it will overwrite the original handle object,
+        making that handle object out of reference.
+        Users should always call InitHidlHandle() in mirror_tracker.py to get
+        a new handle object.
+
+        Args:
+            filepath: string, path to the file to be opened.
+            mode: string, specifying the mode to open the file.
+            int_data: int list, useful integers to store in the handle object.
+        """
+        # Prepare arguments.
+        request_msg = self._createTemplateRequestMessage(
+            ResControlMsg.HANDLE_PROTO_CREATE_FILE)
+        request_msg.handle_info.num_fds = 1
+        request_msg.handle_info.num_ints = len(int_data)
+
+        # TODO: support more than one file descriptors at once.
+        # Add the file information into proto message.
+        fd_message = request_msg.handle_info.fd_val.add()
+        fd_message.type = CompSpecMsg.FILE_TYPE
+        fd_message.file_mode_str = mode
+        fd_message.file_name = filepath
+
+        # Add the integers into proto message.
+        request_msg.handle_info.int_val.extend(int_data)
+
+        # Send and receive data.
+        response_msg = self._client.SendHidlHandleRequest(request_msg)
+        if response_msg is not None and response_msg.new_handle_id != -1:
+            self._handle_id = response_msg.new_handle_id
+        else:
+            logging.error("Failed to create handle object.")
+
+    def readFile(self, read_data_size, index=0):
+        """Reads from a given file in the handle object.
+
+        Args:
+            read_data_size: int, number of bytes to read.
+            index: int, index of file among all files in the handle object.
+                        Optional if host only wants to read from one file.
+
+        Returns:
+            string, data read from the file.
+        """
+        # Prepare arguments.
+        request_msg = self._createTemplateRequestMessage(
+            ResControlMsg.HANDLE_PROTO_READ_FILE)
+        request_msg.read_data_size = read_data_size
+
+        # Send and receive data.
+        response_msg = self._client.SendHidlHandleRequest(request_msg)
+        if response_msg is not None and response_msg.success:
+            return response_msg.read_data
+        # TODO: more detailed error message.
+        logging.error("Failed to read from the file.")
+        return None
+
+    def writeFile(self, write_data, index=0):
+        """Writes to a given file to the handle object.
+
+        Args:
+            write_data: string, data to be written into file.
+            index: int, index of file among all files in the handle object.
+                        Optional if host only wants to write into one file.
+
+        Returns:
+            int, number of bytes written.
+        """
+        # Prepare arguments.
+        request_msg = self._createTemplateRequestMessage(
+            ResControlMsg.HANDLE_PROTO_WRITE_FILE)
+        request_msg.write_data = write_data
+
+        # Send and receive data.
+        response_msg = self._client.SendHidlHandleRequest(request_msg)
+        if response_msg is not None and response_msg.success:
+            return response_msg.write_data_size
+        # TODO: more detailed error message.
+        logging.error("Failed to write into the file.")
+        return None
+
+    @property
+    def handleId(self):
+        """Gets the id assigned from the target side.
+
+        Returns:
+            int, id of the handle object.
+        """
+        return self._handle_id
+
+    def _createTemplateRequestMessage(self, operation):
+        """Creates a template HidlHandleRequestMessage.
+
+        This method creates a HidlHandleRequestMessage with common arguments
+        among all hidl_handle operations.
+
+        Args:
+            operation: HidlHandleOp, hidl_handle operations.
+                       (see test/vts/proto/VtsResourceControllerMessage.proto).
+
+        Returns:
+            HidlHandleRequestMessage, hidl_handle request message.
+                (See test/vts/proto/VtsResourceControllerMessage.proto).
+        """
+        request_msg = ResControlMsg.HidlHandleRequestMessage()
+        request_msg.operation = operation
+        request_msg.handle_id = self._handle_id
         return request_msg

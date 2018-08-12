@@ -515,11 +515,16 @@ bool VtsHalDriverManager::PreprocessHidlHalFunctionCallArgs(
     }
     case TYPE_FMQ_SYNC:
     case TYPE_FMQ_UNSYNC: {
+      if (arg->fmq_value_size() == 0) {
+        LOG(ERROR) << "Driver manager: host side didn't specify queue "
+                   << "information in fmq_value field.";
+        return false;
+      }
       if (arg->fmq_value(0).fmq_id() != -1) {
         // Preprocess an argument that wants to use an existing FMQ.
         // resource_manager returns address of hidl_memory pointer and
         // driver_manager fills the address in the proto field,
-        // which can be read by vtsc.
+        // which can be read by HAL driver.
         size_t descriptor_addr;
         bool success =
             resource_manager_->GetQueueDescAddress(*arg, &descriptor_addr);
@@ -548,6 +553,25 @@ bool VtsHalDriverManager::PreprocessHidlHalFunctionCallArgs(
         }
         arg->mutable_hidl_memory_value()->set_hidl_mem_address(
             hidl_mem_address);
+      }
+      break;
+    }
+    case TYPE_HANDLE: {
+      if (arg->handle_value().handle_id() != -1) {
+        // Preprocess an argument that wants to use an existing hidl_handle.
+        // resource_manager returns the address of the hidl_memory pointer,
+        // and driver_manager fills the address in the proto field,
+        // which can be read by vtsc.
+        size_t hidl_handle_address;
+        bool success =
+            resource_manager_->GetHidlHandleAddress(*arg, &hidl_handle_address);
+        if (!success) {
+          LOG(ERROR) << "Unable to find hidl_handle with id "
+                     << arg->handle_value().handle_id();
+          return false;
+        }
+        arg->mutable_handle_value()->set_hidl_handle_address(
+            hidl_handle_address);
       }
       break;
     }
@@ -653,6 +677,12 @@ bool VtsHalDriverManager::SetHidlHalFunctionCallResults(
       // Tell resource_manager to register the new memory object.
       int new_mem_id = resource_manager_->RegisterHidlMemory(*return_val);
       return_val->mutable_hidl_memory_value()->set_mem_id(new_mem_id);
+      break;
+    }
+    case TYPE_HANDLE: {
+      // Tell resource_manager to register the new handle object.
+      int new_handle_id = resource_manager_->RegisterHidlHandle(*return_val);
+      return_val->mutable_handle_value()->set_handle_id(new_handle_id);
       break;
     }
     default:
