@@ -23,6 +23,7 @@ import types
 
 from vts.proto import AndroidSystemControlMessage_pb2 as SysMsg_pb2
 from vts.proto import ComponentSpecificationMessage_pb2 as CompSpecMsg_pb2
+from vts.proto import VtsResourceControllerMessage_pb2 as ResControlMsg_pb2
 from vts.runners.host import const
 from vts.runners.host import errors
 from vts.utils.python.mirror import mirror_object
@@ -43,7 +44,10 @@ COMMAND_TYPE_NAME = {
     201: "LIST_APIS",
     202: "CALL_API",
     203: "VTS_AGENT_COMMAND_GET_ATTRIBUTE",
-    301: "VTS_AGENT_COMMAND_EXECUTE_SHELL_COMMAND"
+    301: "VTS_AGENT_COMMAND_EXECUTE_SHELL_COMMAND",
+    401: "VTS_FMQ_COMMAND",
+    402: "VTS_HIDL_MEMORY_COMMAND",
+    403: "VTS_HIDL_HANDLE_COMMAND"
 }
 
 
@@ -51,11 +55,18 @@ class VtsTcpClient(object):
     """VTS TCP Client class.
 
     Attribute:
+        NO_RESPONSE_MSG: string, error message when there is no response
+                         from device.
+        FAIL_RESPONSE_MSG: string, error message when the device sends back
+                           a failure message.
         connection: a TCP socket instance.
         channel: a file to write and read data.
         _mode: the connection mode (adb_forwarding or ssh_tunnel)
         timeout: tcp connection timeout.
     """
+
+    NO_RESPONSE_MSG = "Framework error: TCP client did not receive response from device."
+    FAIL_RESPONSE_MSG = "Framework error: TCP client received unsuccessful response code."
 
     def __init__(self,
                  mode="adb_forwarding",
@@ -175,7 +186,8 @@ class VtsTcpClient(object):
                             target_version_minor=None,
                             target_package=None,
                             target_component_name=None,
-                            hw_binder_service_name=None):
+                            hw_binder_service_name=None,
+                            is_test_hal=None):
         """RPC to LAUNCH_DRIVER_SERVICE.
 
            Args:
@@ -190,6 +202,8 @@ class VtsTcpClient(object):
                target_package: string, package name of a HIDL HAL.
                target_component_name: string, name of a target component.
                hw_binder_service_name: name of a HW Binder service to use.
+               is_test_hal: bool, whether the HAL service is a test HAL
+                            (e.g. msgq).
 
            Returns:
                response code, -1 or 0 on failure, other values on success.
@@ -210,7 +224,8 @@ class VtsTcpClient(object):
             target_version_minor=target_version_minor,
             target_package=target_package,
             target_component_name=target_component_name,
-            hw_binder_service_name=hw_binder_service_name)
+            hw_binder_service_name=hw_binder_service_name,
+            is_test_hal=is_test_hal)
         resp = self.RecvResponse()
         logging.debug("resp for LAUNCH_DRIVER_SERVICE: %s", resp)
         if driver_type == SysMsg_pb2.VTS_DRIVER_TYPE_HAL_HIDL \
@@ -275,7 +290,7 @@ class VtsTcpClient(object):
                 index += 1
             return result
         elif var_spec_msg.type == CompSpecMsg_pb2.TYPE_UNION:
-            result = VtsReturnValueObject()
+            result = {}
             index = 1
             for union_value in var_spec_msg.union_value:
                 if len(union_value.name) > 0:
@@ -295,7 +310,11 @@ class VtsTcpClient(object):
                 result.append(
                     self.GetPythonDataOfVariableSpecMsg(vector_value))
             return result
-        elif (var_spec_msg.type == CompSpecMsg_pb2.TYPE_HIDL_INTERFACE):
+        elif (var_spec_msg.type == CompSpecMsg_pb2.TYPE_HIDL_INTERFACE
+              or var_spec_msg.type == CompSpecMsg_pb2.TYPE_FMQ_SYNC
+              or var_spec_msg.type == CompSpecMsg_pb2.TYPE_FMQ_UNSYNC
+              or var_spec_msg.type == CompSpecMsg_pb2.TYPE_HIDL_MEMORY
+              or var_spec_msg.type == CompSpecMsg_pb2.TYPE_HANDLE):
             logging.debug("var_spec_msg: %s", var_spec_msg)
             return var_spec_msg
 
@@ -419,13 +438,11 @@ class VtsTcpClient(object):
         exit_code = -1
 
         if not resp:
-            msg = "Framework error: TCP client did not receive response from device."
-            logging.error(msg)
-            stderr = [msg]
+            logging.error(self.NO_RESPONSE_MSG)
+            stderr = [self.NO_RESPONSE_MSG]
         elif resp.response_code != SysMsg_pb2.SUCCESS:
-            msg = "Framework error: TCP client received unsuccessful response code."
-            logging.error(msg)
-            stderr = [msg]
+            logging.error(self.FAIL_RESPONSE_MSG)
+            stderr = [self.FAIL_RESPONSE_MSG]
         else:
             stdout = resp.stdout
             stderr = resp.stderr
@@ -436,6 +453,84 @@ class VtsTcpClient(object):
             const.STDERR: stderr,
             const.EXIT_CODE: exit_code
         }
+
+    def SendFmqRequest(self, message):
+        """Sends a command to the FMQ driver and receives the response.
+
+        Args:
+            message: FmqRequestMessage, message that contains the arguments
+                     in the FMQ request.
+
+        Returns:
+            FmqResponseMessage, which includes all possible return value types,
+            including int, bool, and data read from the queue.
+        """
+        self.SendCommand(SysMsg_pb2.VTS_FMQ_COMMAND, fmq_request=message)
+        resp = self.RecvResponse()
+        logging.debug("resp for VTS_FMQ_COMMAND: %s", resp)
+        return self.CheckResourceCommandResponse(
+            resp, getattr(resp, "fmq_response", None))
+
+    def SendHidlMemoryRequest(self, message):
+        """Sends a command to the hidl_memory driver and receives the response.
+
+        Args:
+            message: HidlMemoryRequestMessage, message that contains the arguments
+                     in the hidl_memory request.
+
+        Returns:
+            HidlMemoryResponseMessage, return values needed by the host-side caller.
+        """
+        self.SendCommand(
+            SysMsg_pb2.VTS_HIDL_MEMORY_COMMAND, hidl_memory_request=message)
+        resp = self.RecvResponse()
+        logging.debug("resp for VTS_HIDL_MEMORY_COMMAND: %s", resp)
+        return self.CheckResourceCommandResponse(
+            resp, getattr(resp, "hidl_memory_response", None))
+
+    def SendHidlHandleRequest(self, message):
+        """Sends a command to the hidl_handle driver and receives the response.
+
+        Args:
+            message: HidlHandleRequestMessage, message that contains the arguments
+                     in the hidl_handle request.
+
+        Returns:
+            HidlHandleResponseMessage, return values needed by the host-side caller.
+        """
+        self.SendCommand(
+            SysMsg_pb2.VTS_HIDL_HANDLE_COMMAND, hidl_handle_request=message)
+        resp = self.RecvResponse()
+        logging.debug("resp for VTS_HIDL_HANDLE_COMMAND: %s", resp)
+        return self.CheckResourceCommandResponse(
+            resp, getattr(resp, "hidl_handle_response", None))
+
+    @staticmethod
+    def CheckResourceCommandResponse(agent_response, resource_response):
+        """Checks the response from a VTS resource command.
+
+        This function checks and logs framework errors such as not receiving
+        a response, receving a failure response. Then it checks the response
+        for the resource type is not None, and logs error if needed.
+
+        Args:
+            agent_response: AndroidSystemControlResponseMessage,
+                            response from agent.
+            resource_response: FmqResponseMessage, HidlMemoryResponseMessage,
+                               or HidlHandleResponseMessage, the response for
+                               one of fmq, hidl_memory, and hidl_handle.
+
+        Returns:
+            resource_response that is passed in.
+        """
+        if agent_response is None:
+            logging.error(VtsTcpClient.NO_RESPONSE_MSG)
+        elif agent_response.response_code != SysMsg_pb2.SUCCESS:
+            logging.error(VtsTcpClient.FAIL_RESPONSE_MSG)
+        elif resource_response is None:
+            logging.error("TCP client did not receive a response for " +
+                          "the resource command.")
+        return resource_response
 
     def Ping(self):
         """RPC to send a PING request.
@@ -524,13 +619,17 @@ class VtsTcpClient(object):
                     target_package=None,
                     target_component_name=None,
                     hw_binder_service_name=None,
+                    is_test_hal=None,
                     module_name=None,
                     service_name=None,
                     callback_port=None,
                     driver_type=None,
                     shell_command=None,
                     caller_uid=None,
-                    arg=None):
+                    arg=None,
+                    fmq_request=None,
+                    hidl_memory_request=None,
+                    hidl_handle_request=None):
         """Sends a command.
 
         Args:
@@ -570,6 +669,9 @@ class VtsTcpClient(object):
         if hw_binder_service_name is not None:
             command_msg.hw_binder_service_name = hw_binder_service_name
 
+        if is_test_hal is not None:
+            command_msg.is_test_hal = is_test_hal
+
         if module_name is not None:
             command_msg.module_name = module_name
 
@@ -602,6 +704,15 @@ class VtsTcpClient(object):
                 command_msg.shell_command.extend(shell_command)
             else:
                 command_msg.shell_command.append(shell_command)
+
+        if fmq_request is not None:
+            command_msg.fmq_request.CopyFrom(fmq_request)
+
+        if hidl_memory_request is not None:
+            command_msg.hidl_memory_request.CopyFrom(hidl_memory_request)
+
+        if hidl_handle_request is not None:
+            command_msg.hidl_handle_request.CopyFrom(hidl_handle_request)
 
         logging.debug("command %s" % command_msg)
         message = command_msg.SerializeToString()

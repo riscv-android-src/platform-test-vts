@@ -26,6 +26,7 @@ from vts.proto import ComponentSpecificationMessage_pb2 as CompSpecMsg
 from vts.utils.python.fuzzer import FuzzerUtils
 from vts.utils.python.mirror import mirror_object
 from vts.utils.python.mirror import py2pb
+from vts.utils.python.mirror import resource_mirror
 
 _DEFAULT_TARGET_BASE_PATHS = ["/system/lib64/hw"]
 _DEFAULT_HWBINDER_SERVICE = "default"
@@ -220,23 +221,78 @@ class NativeEntityMirror(mirror_object.MirrorObject):
                 results = results[0]
 
             if isinstance(results, list):  # Non-HIDL HAL does not return list.
-              # Translate TYPE_HIDL_INTERFACE to halMirror.
-              for i, _ in enumerate(results):
-                  result = results[i]
-                  if (result and isinstance(result,
-                                          CompSpecMsg.VariableSpecificationMessage)
-                        and result.type == CompSpecMsg.TYPE_HIDL_INTERFACE):
-                    if result.hidl_interface_id <= -1:
-                      results[i] = None
-                    driver_id = result.hidl_interface_id
-                    nested_interface_name = result.predefined_type.split("::")[-1]
-                    logging.debug("Nested interface name: %s",
-                                  nested_interface_name)
-                    nested_interface = self.GetHalMirrorForInterface(
-                        nested_interface_name, driver_id)
-                    results[i] = nested_interface
-              if len(results) == 1: # singe return result, return the value direcly.
-                  return results[0]
+                # Translate TYPE_HIDL_INTERFACE to halMirror.
+                for i, _ in enumerate(results):
+                    result = results[i]
+                    if (not result or not isinstance(
+                            result, CompSpecMsg.VariableSpecificationMessage)):
+                        # no need to process the return values.
+                        continue
+
+                    if result.type == CompSpecMsg.TYPE_HIDL_INTERFACE:
+                        if result.hidl_interface_id <= -1:
+                            results[i] = None
+                        driver_id = result.hidl_interface_id
+                        nested_interface_name = \
+                            result.predefined_type.split("::")[-1]
+                        logging.debug("Nested interface name: %s",
+                                      nested_interface_name)
+                        nested_interface = self.GetHalMirrorForInterface(
+                            nested_interface_name, driver_id)
+                        results[i] = nested_interface
+                    elif (result.type == CompSpecMsg.TYPE_FMQ_SYNC
+                          or result.type == CompSpecMsg.TYPE_FMQ_UNSYNC):
+                        if (result.fmq_value[0].fmq_id == -1):
+                            logging.error("Invalid new queue_id.")
+                            results[i] = None
+                        else:
+                            # Retrieve type of data in this FMQ.
+                            data_type = None
+                            # For scalar, read scalar_type field.
+                            if result.fmq_value[0].type == \
+                                    CompSpecMsg.TYPE_SCALAR:
+                                data_type = result.fmq_value[0].scalar_type
+                            # For enum, struct, and union, read predefined_type
+                            # field.
+                            elif (result.fmq_value[0].type ==
+                                     CompSpecMsg.TYPE_ENUM or
+                                  result.fmq_value[0].type ==
+                                     CompSpecMsg.TYPE_STRUCT or
+                                  result.fmq_value[0].type ==
+                                     CompSpecMsg.TYPE_UNION):
+                                data_type = result.fmq_value[0].predefined_type
+
+                            # Encounter an unknown type in FMQ.
+                            if data_type == None:
+                                logging.error(
+                                    "Unknown type %d in the new FMQ.",
+                                    result.fmq_value[0].type)
+                                results[i] = None
+                                continue
+                            sync = result.type == CompSpecMsg.TYPE_FMQ_SYNC
+                            fmq_mirror = resource_mirror.ResourceFmqMirror(
+                                data_type, sync, self._client,
+                                result.fmq_value[0].fmq_id)
+                            results[i] = fmq_mirror
+                    elif result.type == CompSpecMsg.TYPE_HIDL_MEMORY:
+                        if result.hidl_memory_value.mem_id == -1:
+                            logging.error("Invalid new mem_id.")
+                            results[i] = None
+                        else:
+                            mem_mirror = resource_mirror.ResourceHidlMemoryMirror(
+                                self._client, result.hidl_memory_value.mem_id)
+                            results[i] = mem_mirror
+                    elif result.type == CompSpecMsg.TYPE_HANDLE:
+                        if result.handle_value.handle_id == -1:
+                            logging.error("Invalid new handle_id.")
+                            results[i] = None
+                        else:
+                            handle_mirror = resource_mirror.ResourceHidlHandleMirror(
+                                self._client, result.handle_value.handle_id)
+                            results[i] = handle_mirror
+                if len(results) == 1:
+                    # single return result, return the value directly.
+                    return results[0]
             return results
 
         def MessageGenerator(*args, **kwargs):
@@ -289,9 +345,8 @@ class NativeEntityMirror(mirror_object.MirrorObject):
                 ret_v = getattr(arg_msg.scalar_value, arg_msg.scalar_type,
                                 None)
                 if ret_v is None:
-                    raise MirrorObjectError(
-                        "No value found for type %s in %s." %
-                        (arg_msg.scalar_type, api_name))
+                    raise MirrorObjectError("No value found for type %s in %s."
+                                            % (arg_msg.scalar_type, api_name))
                 return ret_v
             elif arg_msg.type == CompSpecMsg.TYPE_STRING:
                 return arg_msg.string_value.message

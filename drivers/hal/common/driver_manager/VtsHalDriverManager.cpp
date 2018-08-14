@@ -35,10 +35,12 @@ namespace vts {
 
 VtsHalDriverManager::VtsHalDriverManager(const string& spec_dir,
                                          const int epoch_count,
-                                         const string& callback_socket_name)
+                                         const string& callback_socket_name,
+                                         VtsResourceManager* resource_manager)
     : callback_socket_name_(callback_socket_name),
       hal_driver_loader_(
-          HalDriverLoader(spec_dir, epoch_count, callback_socket_name)) {}
+          HalDriverLoader(spec_dir, epoch_count, callback_socket_name)),
+      resource_manager_(resource_manager) {}
 
 DriverId VtsHalDriverManager::LoadTargetComponent(
     const string& dll_file_name, const string& spec_lib_file_path,
@@ -120,23 +122,10 @@ string VtsHalDriverManager::CallFunction(FunctionCallMessage* call_msg) {
     // Pre-processing if we want to call an API with an interface as argument.
     for (int index = 0; index < api->arg_size(); index++) {
       auto* arg = api->mutable_arg(index);
-      if (arg->type() == TYPE_HIDL_INTERFACE) {
-        string type_name = arg->predefined_type();
-        ComponentSpecificationMessage spec_msg;
-        string version_str = GetVersion(type_name);
-        int version_major = GetVersionMajor(version_str, true);
-        int version_minor = GetVersionMinor(version_str, true);
-        spec_msg.set_package(GetPackageName(type_name));
-        spec_msg.set_component_type_version_major(version_major);
-        spec_msg.set_component_type_version_minor(version_minor);
-        spec_msg.set_component_name(GetComponentName(type_name));
-        DriverId driver_id = FindDriverIdInternal(spec_msg);
-        // If found a registered driver for the interface, set the pointer in
-        // the arg proto.
-        if (driver_id != kInvalidDriverId) {
-          uint64_t interface_pt = GetDriverPointerById(driver_id);
-          arg->set_hidl_interface_pointer(interface_pt);
-        }
+      bool process_success = PreprocessHidlHalFunctionCallArgs(arg);
+      if (!process_success) {
+        LOG(ERROR) << "Error in preprocess argument index " << index;
+        return kErrorString;
       }
     }
     // For Hidl HAL, use CallFunction method.
@@ -158,39 +147,10 @@ string VtsHalDriverManager::CallFunction(FunctionCallMessage* call_msg) {
   if (call_msg->component_class() == HAL_HIDL) {
     for (int index = 0; index < result_msg.return_type_hidl_size(); index++) {
       auto* return_val = result_msg.mutable_return_type_hidl(index);
-      if (return_val->type() == TYPE_HIDL_INTERFACE) {
-        if (return_val->hidl_interface_pointer() != 0) {
-          string type_name = return_val->predefined_type();
-          uint64_t interface_pt = return_val->hidl_interface_pointer();
-          std::unique_ptr<DriverBase> driver;
-          ComponentSpecificationMessage spec_msg;
-          string version_str = GetVersion(type_name);
-          int version_major = GetVersionMajor(version_str, true);
-          int version_minor = GetVersionMinor(version_str, true);
-          string package_name = GetPackageName(type_name);
-          string component_name = GetComponentName(type_name);
-          if (!hal_driver_loader_.FindComponentSpecification(
-                  HAL_HIDL, package_name, version_major, version_minor,
-                  component_name, 0, &spec_msg)) {
-            LOG(ERROR)
-                << "Failed to load specification for generated interface :"
-                << type_name;
-            return kErrorString;
-          }
-          string driver_lib_path = GetHidlHalDriverLibName(
-              package_name, version_major, version_minor);
-          // TODO(zhuoyao): figure out a way to get the service_name.
-          string hw_binder_service_name = "default";
-          driver.reset(hal_driver_loader_.GetDriver(driver_lib_path, spec_msg,
-                                                    hw_binder_service_name,
-                                                    interface_pt, true, ""));
-          int32_t driver_id =
-              RegisterDriver(std::move(driver), spec_msg, interface_pt);
-          return_val->set_hidl_interface_id(driver_id);
-        } else {
-          // in case of generated nullptr, set the driver_id to -1.
-          return_val->set_hidl_interface_id(-1);
-        }
+      bool set_success = SetHidlHalFunctionCallResults(return_val);
+      if (!set_success) {
+        LOG(ERROR) << "Error in setting return value index " << index;
+        return kErrorString;
       }
     }
     google::protobuf::TextFormat::PrintToString(result_msg, &output);
@@ -481,5 +441,255 @@ string VtsHalDriverManager::GetComponentDebugMsg(const int component_class,
            " version: " + version + " component_name: " + component_name;
   }
 }
+
+bool VtsHalDriverManager::PreprocessHidlHalFunctionCallArgs(
+    VariableSpecificationMessage* arg) {
+  switch (arg->type()) {
+    case TYPE_ARRAY:
+    case TYPE_VECTOR: {
+      // Recursively parse each element in the vector/array.
+      for (int i = 0; i < arg->vector_size(); i++) {
+        if (!PreprocessHidlHalFunctionCallArgs(arg->mutable_vector_value(i))) {
+          // Bad argument, preprocess failure.
+          LOG(ERROR) << "Failed to preprocess vector value " << i << ".";
+          return false;
+        }
+      }
+      break;
+    }
+    case TYPE_UNION: {
+      // Recursively parse each union value.
+      for (int i = 0; i < arg->union_value_size(); i++) {
+        auto* union_field = arg->mutable_union_value(i);
+        if (!PreprocessHidlHalFunctionCallArgs(union_field)) {
+          // Bad argument, preprocess failure.
+          LOG(ERROR) << "Failed to preprocess union field \""
+                     << union_field->name() << "\" in union \"" << arg->name()
+                     << "\".";
+          return false;
+        }
+      }
+      break;
+    }
+    case TYPE_STRUCT: {
+      // Recursively parse each struct value.
+      for (int i = 0; i < arg->struct_value_size(); i++) {
+        auto* struct_field = arg->mutable_struct_value(i);
+        if (!PreprocessHidlHalFunctionCallArgs(struct_field)) {
+          // Bad argument, preprocess failure.
+          LOG(ERROR) << "Failed to preprocess struct field \""
+                     << struct_field->name() << "\" in struct \"" << arg->name()
+                     << "\".";
+          return false;
+        }
+      }
+      break;
+    }
+    case TYPE_REF: {
+      if (!PreprocessHidlHalFunctionCallArgs(arg->mutable_ref_value())) {
+        // Bad argument, preprocess failure.
+        LOG(ERROR) << "Failed to preprocess reference value with name \""
+                   << arg->name() << "\".";
+        return false;
+      }
+      break;
+    }
+    case TYPE_HIDL_INTERFACE: {
+      string type_name = arg->predefined_type();
+      ComponentSpecificationMessage spec_msg;
+      string version_str = GetVersion(type_name);
+      int version_major = GetVersionMajor(version_str, true);
+      int version_minor = GetVersionMinor(version_str, true);
+      spec_msg.set_package(GetPackageName(type_name));
+      spec_msg.set_component_type_version_major(version_major);
+      spec_msg.set_component_type_version_minor(version_minor);
+      spec_msg.set_component_name(GetComponentName(type_name));
+      DriverId driver_id = FindDriverIdInternal(spec_msg);
+      // If found a registered driver for the interface, set the pointer in
+      // the arg proto.
+      if (driver_id != kInvalidDriverId) {
+        uint64_t interface_pt = GetDriverPointerById(driver_id);
+        arg->set_hidl_interface_pointer(interface_pt);
+      }
+      break;
+    }
+    case TYPE_FMQ_SYNC:
+    case TYPE_FMQ_UNSYNC: {
+      if (arg->fmq_value_size() == 0) {
+        LOG(ERROR) << "Driver manager: host side didn't specify queue "
+                   << "information in fmq_value field.";
+        return false;
+      }
+      if (arg->fmq_value(0).fmq_id() != -1) {
+        // Preprocess an argument that wants to use an existing FMQ.
+        // resource_manager returns address of hidl_memory pointer and
+        // driver_manager fills the address in the proto field,
+        // which can be read by HAL driver.
+        size_t descriptor_addr;
+        bool success =
+            resource_manager_->GetQueueDescAddress(*arg, &descriptor_addr);
+        if (!success) {
+          LOG(ERROR) << "Unable to find queue descriptor for queue with id "
+                     << arg->fmq_value(0).fmq_id();
+          return false;
+        }
+        arg->mutable_fmq_value(0)->set_fmq_desc_address(descriptor_addr);
+      }
+      break;
+    }
+    case TYPE_HIDL_MEMORY: {
+      if (arg->hidl_memory_value().mem_id() != -1) {
+        // Preprocess an argument that wants to use an existing hidl_memory.
+        // resource_manager returns the address of the hidl_memory pointer,
+        // and driver_manager fills the address in the proto field,
+        // which can be read by vtsc.
+        size_t hidl_mem_address;
+        bool success =
+            resource_manager_->GetHidlMemoryAddress(*arg, &hidl_mem_address);
+        if (!success) {
+          LOG(ERROR) << "Unable to find hidl_memory with id "
+                     << arg->hidl_memory_value().mem_id();
+          return false;
+        }
+        arg->mutable_hidl_memory_value()->set_hidl_mem_address(
+            hidl_mem_address);
+      }
+      break;
+    }
+    case TYPE_HANDLE: {
+      if (arg->handle_value().handle_id() != -1) {
+        // Preprocess an argument that wants to use an existing hidl_handle.
+        // resource_manager returns the address of the hidl_memory pointer,
+        // and driver_manager fills the address in the proto field,
+        // which can be read by vtsc.
+        size_t hidl_handle_address;
+        bool success =
+            resource_manager_->GetHidlHandleAddress(*arg, &hidl_handle_address);
+        if (!success) {
+          LOG(ERROR) << "Unable to find hidl_handle with id "
+                     << arg->handle_value().handle_id();
+          return false;
+        }
+        arg->mutable_handle_value()->set_hidl_handle_address(
+            hidl_handle_address);
+      }
+      break;
+    }
+    default:
+      break;
+  }
+  return true;
+}
+
+bool VtsHalDriverManager::SetHidlHalFunctionCallResults(
+    VariableSpecificationMessage* return_val) {
+  switch (return_val->type()) {
+    case TYPE_ARRAY:
+    case TYPE_VECTOR: {
+      // Recursively set each element in the vector/array.
+      for (int i = 0; i < return_val->vector_size(); i++) {
+        if (!SetHidlHalFunctionCallResults(
+                return_val->mutable_vector_value(i))) {
+          // Failed to set recursive return value.
+          LOG(ERROR) << "Failed to set vector value " << i << ".";
+          return false;
+        }
+      }
+      break;
+    }
+    case TYPE_UNION: {
+      // Recursively set each field.
+      for (int i = 0; i < return_val->union_value_size(); i++) {
+        auto* union_field = return_val->mutable_union_value(i);
+        if (!SetHidlHalFunctionCallResults(union_field)) {
+          // Failed to set recursive return value.
+          LOG(ERROR) << "Failed to set union field \"" << union_field->name()
+                     << "\" in union \"" << return_val->name() << "\".";
+          return false;
+        }
+      }
+      break;
+    }
+    case TYPE_STRUCT: {
+      // Recursively set each field.
+      for (int i = 0; i < return_val->struct_value_size(); i++) {
+        auto* struct_field = return_val->mutable_struct_value(i);
+        if (!SetHidlHalFunctionCallResults(struct_field)) {
+          // Failed to set recursive return value.
+          LOG(ERROR) << "Failed to set struct field \"" << struct_field->name()
+                     << "\" in struct \"" << return_val->name() << "\".";
+          return false;
+        }
+      }
+      break;
+    }
+    case TYPE_REF: {
+      if (!SetHidlHalFunctionCallResults(return_val->mutable_ref_value())) {
+        // Failed to set recursive return value.
+        LOG(ERROR) << "Failed to set reference value for \""
+                   << return_val->name() << "\".";
+        return false;
+      }
+      break;
+    }
+    case TYPE_HIDL_INTERFACE: {
+      if (return_val->hidl_interface_pointer() != 0) {
+        string type_name = return_val->predefined_type();
+        uint64_t interface_pt = return_val->hidl_interface_pointer();
+        std::unique_ptr<DriverBase> driver;
+        ComponentSpecificationMessage spec_msg;
+        string version_str = GetVersion(type_name);
+        int version_major = GetVersionMajor(version_str, true);
+        int version_minor = GetVersionMinor(version_str, true);
+        string package_name = GetPackageName(type_name);
+        string component_name = GetComponentName(type_name);
+        if (!hal_driver_loader_.FindComponentSpecification(
+                HAL_HIDL, package_name, version_major, version_minor,
+                component_name, 0, &spec_msg)) {
+          LOG(ERROR) << "Failed to load specification for generated interface :"
+                     << type_name;
+          return false;
+        }
+        string driver_lib_path =
+            GetHidlHalDriverLibName(package_name, version_major, version_minor);
+        // TODO(zhuoyao): figure out a way to get the service_name.
+        string hw_binder_service_name = "default";
+        driver.reset(hal_driver_loader_.GetDriver(driver_lib_path, spec_msg,
+                                                  hw_binder_service_name,
+                                                  interface_pt, true, ""));
+        int32_t driver_id =
+            RegisterDriver(std::move(driver), spec_msg, interface_pt);
+        return_val->set_hidl_interface_id(driver_id);
+      } else {
+        // in case of generated nullptr, set the driver_id to -1.
+        return_val->set_hidl_interface_id(-1);
+      }
+      break;
+    }
+    case TYPE_FMQ_SYNC:
+    case TYPE_FMQ_UNSYNC: {
+      // Tell resource_manager to register a new FMQ.
+      int new_queue_id = resource_manager_->RegisterFmq(*return_val);
+      return_val->mutable_fmq_value(0)->set_fmq_id(new_queue_id);
+      break;
+    }
+    case TYPE_HIDL_MEMORY: {
+      // Tell resource_manager to register the new memory object.
+      int new_mem_id = resource_manager_->RegisterHidlMemory(*return_val);
+      return_val->mutable_hidl_memory_value()->set_mem_id(new_mem_id);
+      break;
+    }
+    case TYPE_HANDLE: {
+      // Tell resource_manager to register the new handle object.
+      int new_handle_id = resource_manager_->RegisterHidlHandle(*return_val);
+      return_val->mutable_handle_value()->set_handle_id(new_handle_id);
+      break;
+    }
+    default:
+      break;
+  }
+  return true;
+}
+
 }  // namespace vts
 }  // namespace android

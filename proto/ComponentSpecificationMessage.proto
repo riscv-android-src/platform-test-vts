@@ -93,6 +93,12 @@ enum ComponentType {
   GRAPHICS_COMPOSER = 23;
   // For a media omx submodule.
   MEDIA_OMX = 24;
+  // For msgq test HAL.
+  TESTS_MSGQ = 25;
+  // For memory test HAL.
+  TESTS_MEMORY = 26;
+  // For dumpstate HAL (a lazy HAL, for debugging).
+  DUMPSTATE = 27;
 
   // for bionic's libm
   BIONIC_LIBM = 1001;
@@ -337,6 +343,15 @@ message EnumDataValueMessage {
 message MemoryDataValueMessage {
   optional int64 size = 1;
   optional bytes contents = 2;
+  // To identify an existing hidl_memory object stored in resource_manager.
+  optional int32 mem_id = 3 [default = -1];
+  // To record the pointer address of hidl_memory object.
+  // We use uint64 to represent the address of the hidl_memory pointer,
+  // which allows vtsc to reinterpret the address when caller wants to use
+  // an existing hidl_memory object stored in resource_manager.
+  // This field is updated by driver_manager when the hidl_memory address
+  // is found in memory.
+  optional uint64 hidl_mem_address = 4;
 }
 
 // Type of a file descriptor.
@@ -355,6 +370,9 @@ message FdMessage {
   optional uint32 mode = 2;
   optional int32 flags = 3;
   optional bytes file_name = 4;
+  // When opening a file in host side, user specifies file
+  // access mode in string.
+  optional bytes file_mode_str = 5;
   // For shared memory.
   optional MemoryDataValueMessage memory = 6;
 }
@@ -371,6 +389,17 @@ message HandleDataValueMessage {
   repeated FdMessage fd_val = 4;
   // ints values
   repeated int32 int_val = 5;
+  // To specify an existing handle object registered in target-side driver.
+  // If host side specifies this field, HIDL function calls will retrieve
+  // the handle object from target-side driver, instead of creating a new one.
+  optional int32 handle_id = 6 [default = -1];
+  // To record the pointer address of hidl_handle object.
+  // We use uint64 to represent the address of the hidl_handle pointer,
+  // which allows vtsc to reinterpret the address when caller wants to use
+  // an existing hidl_handle object stored in target-side driver.
+  // This field is updated by driver_manager when the hidl_handle address
+  // is found in memory.
+  optional uint64 hidl_handle_address = 7;
 }
 
 // To specify a function argument or an attribute in general.
@@ -421,6 +450,17 @@ message VariableSpecificationMessage {
 
   // for the definition/value of TYPE_FMQ_SYNC and TYPE_FMQ_UNSYNC.
   repeated VariableSpecificationMessage fmq_value = 161;
+  // for queue identifier of TYPE_FMQ_SYNC and TYPE_FMQ_UNSYNC,
+  // when caller wants to use an existing FMQ.
+  optional int32 fmq_id = 162 [default = -1];
+  // descriptor of an existing queue.
+  // The descriptor can be passed in hidl and be used to create new
+  // FMQ objects. We use uint64 to represent the address of the descriptor,
+  // which allows vtsc to reinterpret the address when callers wants to use
+  // an existing FMQ.
+  // This field is updated by driver_manager when the descriptor of
+  // an queue object is located in memory.
+  optional uint64 fmq_desc_address = 163;
 
   // for TYPE_REF.
   optional VariableSpecificationMessage ref_value = 171;
