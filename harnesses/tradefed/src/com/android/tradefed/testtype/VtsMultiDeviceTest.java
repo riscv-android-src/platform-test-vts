@@ -158,6 +158,8 @@ public class VtsMultiDeviceTest
     static final float DEFAULT_TARGET_VERSION = -1;
     static final String DEFAULT_TESTCASE_CONFIG_PATH =
             "vts/tools/vts-tradefed/res/default/DefaultTestCase.runner_conf";
+    // TODO(hsinyichen): Read max-test-timeout from configuration
+    static final long MAX_TEST_TIMEOUT_MSECS = 1000 * 60 * 60 * 10;
 
     private ITestDevice mDevice = null;
     private IAbi mAbi = null;
@@ -561,6 +563,20 @@ public class VtsMultiDeviceTest
      * {@inheritDoc}
      */
     @Override
+    public void clearIncludeFilters() {
+        mIncludeFilters.clear();
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public Set<String> getIncludeFilters() {
+        return mIncludeFilters;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     public void addExcludeFilter(String filter) {
         mExcludeFilters.add(cleanFilter(filter));
     }
@@ -573,6 +589,18 @@ public class VtsMultiDeviceTest
         for (String filter : filters) {
             mExcludeFilters.add(cleanFilter(filter));
         }
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void clearExcludeFilters() {
+        mExcludeFilters.clear();
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public Set<String> getExcludeFilters() {
+        return mExcludeFilters;
     }
 
     /**
