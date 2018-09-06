@@ -22,6 +22,8 @@ import com.android.tradefed.result.FileInputStreamSource;
 import com.android.tradefed.result.LogDataType;
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Set;
 
 /**
  * Utility class to add output file to TradeFed log directory.
@@ -31,12 +33,6 @@ public class OutputUtil {
     ITestLogger mListener;
     private String mTestModuleName = null;
     private String mAbiName = null;
-
-    // Python output file patterns to be included in results
-    static private String[] PYTHON_OUTPUT_PATTERNS = new String[] {"test_run_details.*\\.txt",
-            "vts_agent_.*\\.log", "systrace_.*\\.html", "logcat.*\\.txt", "bugreport.*\\.zip"};
-    // Python folder pattern in which any files will be included in results
-    static private String PYTHON_OUTPUT_ADDITIONAL = ".*additional_output_files";
 
     public OutputUtil(ITestLogger listener) {
         mListener = listener;
@@ -54,33 +50,26 @@ public class OutputUtil {
     }
 
     /**
-     * Collect all VTS python runner log output files
+     * Collect all VTS python runner log output files as a single zip file
      * @param logDirectory
      */
-    public void collectVtsRunnerOutputs(File logDirectory) {
-        // First, collect known patterns.
-        for (String pattern : PYTHON_OUTPUT_PATTERNS) {
-            try {
-                FileUtil.findFiles(logDirectory, pattern)
-                        .forEach(path -> addVtsRunnerOutputFile(new File(path)));
-            } catch (IOException e) {
-                CLog.e("Error reading log directory: %s", logDirectory);
-                CLog.e(e);
-            }
-        }
-
-        // Next, collect any additional files produced by tests.
+    public void ZipVtsRunnerOutputDir(File logDirectory) {
         try {
-            for (String path : FileUtil.findFiles(logDirectory, PYTHON_OUTPUT_ADDITIONAL)) {
-                for (File f : new File(path).listFiles()) {
-                    addVtsRunnerOutputFile(f);
-                }
-
-                // Only use the first result, if many were found.
-                break;
+            Set<String> latest = FileUtil.findFiles(logDirectory, "latest");
+            if (latest.isEmpty()) {
+                CLog.e("Empty python log directory: %s", logDirectory);
+                return;
             }
+
+            File tmpZip = ZipUtil.createZip(
+                    Arrays.asList(new File(latest.iterator().next()).listFiles()));
+            String outputFileName = "module_" + mTestModuleName + "_output_files_" + mAbiName;
+            FileInputStreamSource inputSource = new FileInputStreamSource(tmpZip);
+            mListener.testLog(outputFileName, LogDataType.ZIP, inputSource);
+            tmpZip.delete();
+
         } catch (IOException e) {
-            CLog.e("Error reading log directory: %s", logDirectory);
+            CLog.e("Error processing python module output directory: %s", logDirectory);
             CLog.e(e);
         }
     }
@@ -89,23 +78,31 @@ public class OutputUtil {
      *
      * @param logFile
      */
-    private void addVtsRunnerOutputFile(File logFile) {
+    public void addVtsRunnerOutputFile(File logFile) {
         String fileName = logFile.getName();
+        String fileNameLower = fileName.toLowerCase();
 
         LogDataType type;
-        if (fileName.endsWith(".html")) {
+        if (fileNameLower.endsWith(".html")) {
             type = LogDataType.HTML;
-        } else if (fileName.startsWith("logcat")) {
+        } else if (fileNameLower.startsWith("logcat")) {
             type = LogDataType.LOGCAT;
-        } else if (fileName.startsWith("bugreport") && fileName.endsWith(".zip")) {
+        } else if (fileNameLower.startsWith("bugreport") && fileNameLower.endsWith(".zip")) {
             type = LogDataType.BUGREPORTZ;
-        } else if (fileName.endsWith(".txt") || fileName.endsWith(".log")) {
+        } else if (fileNameLower.startsWith("bugreport") && fileNameLower.endsWith(".txt")) {
+            type = LogDataType.BUGREPORT;
+        } else if (fileNameLower.endsWith(".txt") || fileNameLower.endsWith(".log")) {
             type = LogDataType.TEXT;
-        } else if (fileName.endsWith(".zip")) {
+        } else if (fileNameLower.endsWith(".zip")) {
             type = LogDataType.ZIP;
+        } else if (fileNameLower.endsWith(".jpg")) {
+            type = LogDataType.JPEG;
+        } else if (fileNameLower.endsWith(".tar.gz")) {
+            type = LogDataType.TAR_GZ;
+        } else if (fileNameLower.endsWith(".png")) {
+            type = LogDataType.PNG;
         } else {
-            CLog.w("Unknown output file type. Skipping %s", logFile);
-            return;
+            type = LogDataType.UNKNOWN;
         }
 
         String outputFileName = mTestModuleName + "_" + fileName + "_" + mAbiName;
@@ -121,7 +118,7 @@ public class OutputUtil {
     }
 
     /**
-     * @param bitness
+     * @param abiName
      */
     public void setAbiName(String abiName) {
         mAbiName = abiName;

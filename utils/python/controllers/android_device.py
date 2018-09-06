@@ -38,6 +38,7 @@ from vts.utils.python.controllers import event_dispatcher
 from vts.utils.python.controllers import fastboot
 from vts.utils.python.controllers import customflasher
 from vts.utils.python.controllers import sl4a_client
+from vts.utils.python.instrumentation import test_framework_instrumentation as tfi
 from vts.utils.python.mirror import mirror_tracker
 
 VTS_CONTROLLER_CONFIG_NAME = "AndroidDevice"
@@ -67,6 +68,8 @@ PROPERTY_PRODUCT_SKU = "ro.boot.product.hardware.sku"
 # the slot for vbmeta.img
 _FASTBOOT_VAR_HAS_VBMETA = "has-slot:vbmeta"
 
+SYSPROP_DEV_BOOTCOMPLETE = "dev.bootcomplete"
+SYSPROP_SYS_BOOT_COMPLETED = "sys.boot_completed"
 # the name of a system property which tells whether to stop properly configured
 # native servers where properly configured means a server's init.rc is
 # configured to stop when that property's value is 1.
@@ -740,6 +743,9 @@ class AndroidDevice(object):
             raise AndroidDeviceError(("Android device %s already has an adb "
                                       "logcat thread going on. Cannot start "
                                       "another one.") % self.serial)
+        event = tfi.Begin("start adb logcat from android_device",
+                          tfi.categories.FRAMEWORK_SETUP)
+
         f_name = "adblog_%s_%s.txt" % (self.model, self.serial)
         utils.create_dir(self.log_path)
         logcat_file_path = os.path.join(self.log_path, f_name)
@@ -752,6 +758,7 @@ class AndroidDevice(object):
                                                            logcat_file_path)
         self.adb_logcat_process = utils.start_standing_subprocess(cmd)
         self.adb_logcat_file_path = logcat_file_path
+        event.End()
 
     def stopAdbLogcat(self):
         """Stops the adb logcat collection subprocess.
@@ -760,11 +767,16 @@ class AndroidDevice(object):
             raise AndroidDeviceError(
                 "Android device %s does not have an ongoing adb logcat collection."
                 % self.serial)
+
+        event = tfi.Begin("stop adb logcat from android_device",
+                          tfi.categories.FRAMEWORK_TEARDOWN)
         try:
             utils.stop_standing_subprocess(self.adb_logcat_process)
         except utils.VTSUtilsError as e:
+            event.Remove("Cannot stop adb logcat. %s" % e)
             logging.error("Cannot stop adb logcat. %s", e)
         self.adb_logcat_process = None
+        event.End()
 
     def takeBugReport(self, test_name, begin_time):
         """Takes a bug report on the device and stores it in a file.
@@ -825,8 +837,8 @@ class AndroidDevice(object):
             True if booted, False otherwise.
         """
         try:
-            completed = self.getProp("sys.boot_completed")
-            if completed == '1':
+            if (self.getProp(SYSPROP_SYS_BOOT_COMPLETED) == '1' and
+                self.getProp(SYSPROP_DEV_BOOTCOMPLETE) == '1'):
                 return True
         except adb.AdbError:
             # adb shell calls may fail during certain period of booting
@@ -917,7 +929,8 @@ class AndroidDevice(object):
         """
         logging.debug("stopping Android framework")
         self.adb.shell("stop")
-        self.setProp("sys.boot_completed", 0)
+        self.setProp(SYSPROP_SYS_BOOT_COMPLETED, 0)
+        self.setProp(SYSPROP_DEV_BOOTCOMPLETE, 0)
         logging.info("Android framework stopped")
 
     def stop(self, stop_native_server=False):
@@ -1095,13 +1108,19 @@ class AndroidDevice(object):
         2. Start VtsAgent and create HalMirror unless disabled in config.
         3. If enabled in config, start sl4a service and create sl4a clients.
         """
+        event = tfi.Begin("start vts services",
+                          tfi.categories.FRAMEWORK_SETUP)
+
         self.enable_vts_agent = getattr(self, "enable_vts_agent", True)
         self.enable_sl4a = getattr(self, "enable_sl4a", False)
         self.enable_sl4a_ed = getattr(self, "enable_sl4a_ed", False)
         try:
             self.startAdbLogcat()
-        except:
-            self.log.exception("Failed to start adb logcat!")
+        except Exception as e:
+            msg = "Failed to start adb logcat!"
+            event.Remove(msg)
+            self.log.error(msg)
+            self.log.exception(e)
             raise
         if self.enable_vts_agent:
             self.startVtsAgent()
@@ -1122,9 +1141,12 @@ class AndroidDevice(object):
             try:
                 self.startSl4aClient(self.enable_sl4a_ed)
             except Exception as e:
-                self.log.exception("Failed to start SL4A!")
+                msg = "Failed to start SL4A!"
+                event.Remove(msg)
+                self.log.error(msg)
                 self.log.exception(e)
                 raise
+        event.End()
 
     def stopServices(self):
         """Stops long running services on the android device.
@@ -1150,46 +1172,48 @@ class AndroidDevice(object):
             raise AndroidDeviceError(
                 "HAL agent is already running on %s." % self.serial)
 
+        event = tfi.Begin("start vts agent", tfi.categories.FRAMEWORK_SETUP)
+
+        event_cleanup = tfi.Begin("start vts agent -- cleanup", tfi.categories.FRAMEWORK_SETUP)
         cleanup_commands = [
             "rm -f /data/local/tmp/vts_driver_*",
             "rm -f /data/local/tmp/vts_agent_callback*"
         ]
-        kill_commands = [
-            "killall vts_hal_agent32", "killall vts_hal_agent64",
-            "killall vts_hal_driver32", "killall vts_hal_driver64",
-            "killall vts_shell_driver32", "killall vts_shell_driver64"
-        ]
-        cleanup_commands.extend(kill_commands)
-        chmod_commands = [
-            "chmod 755 %s/32/vts_hal_agent32" % DEFAULT_AGENT_BASE_DIR,
-            "chmod 755 %s/64/vts_hal_agent64" % DEFAULT_AGENT_BASE_DIR,
-            "chmod 755 %s/32/vts_hal_driver32" % DEFAULT_AGENT_BASE_DIR,
-            "chmod 755 %s/64/vts_hal_driver64" % DEFAULT_AGENT_BASE_DIR,
-            "chmod 755 %s/32/vts_shell_driver32" % DEFAULT_AGENT_BASE_DIR,
-            "chmod 755 %s/64/vts_shell_driver64" % DEFAULT_AGENT_BASE_DIR
-        ]
-        cleanup_commands.extend(chmod_commands)
-        for cmd in cleanup_commands:
-            try:
-                self.adb.shell(cmd)
-            except adb.AdbError as e:
-                self.log.warning(
-                    "A command to setup the env to start the VTS Agent failed %s",
-                    e)
+
+        kill_command = "pgrep 'vts_*' | xargs kill"
+        cleanup_commands.append(kill_command)
+        try:
+            self.adb.shell("\"" + " ; ".join(cleanup_commands) + "\"")
+        except adb.AdbError as e:
+            self.log.warning(
+                "A command to setup the env to start the VTS Agent failed %s",
+                e)
+        event_cleanup.End()
+
         log_severity = getattr(self, keys.ConfigKeys.KEY_LOG_SEVERITY, "INFO")
         bits = ['64', '32'] if self.is64Bit else ['32']
+        file_names = ['vts_hal_agent', 'vts_hal_driver', 'vts_shell_driver']
         for bitness in bits:
             vts_agent_log_path = os.path.join(
                 self.log_path, 'vts_agent_%s_%s.log' % (bitness, self.serial))
-            cmd = ('adb -s {s} shell LD_LIBRARY_PATH={path}/{bitness} '
+
+            chmod_cmd = ' '.join(
+                map(lambda file_name: 'chmod 755 {path}/{bit}/{file_name}{bit};'.format(
+                        path=DEFAULT_AGENT_BASE_DIR,
+                        bit=bitness,
+                        file_name=file_name),
+                    file_names))
+
+            cmd = ('adb -s {s} shell "{chmod} LD_LIBRARY_PATH={path}/{bitness} '
                    '{path}/{bitness}/vts_hal_agent{bitness} '
                    '--hal_driver_path_32={path}/32/vts_hal_driver32 '
                    '--hal_driver_path_64={path}/64/vts_hal_driver64 '
                    '--spec_dir={path}/spec '
                    '--shell_driver_path_32={path}/32/vts_shell_driver32 '
                    '--shell_driver_path_64={path}/64/vts_shell_driver64 '
-                   '-l {severity} >> {log} 2>&1').format(
+                   '-l {severity}" >> {log} 2>&1').format(
                        s=self.serial,
+                       chmod=chmod_cmd,
                        bitness=bitness,
                        path=DEFAULT_AGENT_BASE_DIR,
                        log=vts_agent_log_path,
@@ -1206,9 +1230,13 @@ class AndroidDevice(object):
                 # one common cause is that 64-bit executable is not supported
                 # in low API level devices.
                 if bitness == '32':
+                    msg = "unrecognized bitness"
+                    event.Remove(msg)
+                    logging.error(msg)
                     raise
                 else:
                     logging.error('retrying using a 32-bit binary.')
+        event.End()
 
     def stopVtsAgent(self):
         """Stop the HAL agent running on the AndroidDevice.
