@@ -124,6 +124,7 @@ public class VtsMultiDeviceTest
     static final String ENABLE_COVERAGE = "enable_coverage";
     static final String EXCLUDE_COVERAGE_PATH = "exclude_coverage_path";
     static final String ENABLE_PROFILING = "enable_profiling";
+    static final String PROFILING_ARG_VALUE = "profiling_arg_value";
     static final String ENABLE_SANCOV = "enable_sancov";
     static final String GTEST_BATCH_MODE = "gtest_batch_mode";
     static final String SAVE_TRACE_FIEL_REMOTE = "save_trace_file_remote";
@@ -252,6 +253,9 @@ public class VtsMultiDeviceTest
 
     @Option(name = "enable-profiling", description = "Enable profiling for the tests.")
     private boolean mEnableProfiling = false;
+
+    @Option(name = "profiling-arg-value", description = "Whether to profile for arg value.")
+    private boolean mProfilingArgValue = false;
 
     @Option(name = "save-trace-file-remote",
             description = "Whether to save the trace file in remote storage.")
@@ -743,7 +747,7 @@ public class VtsMultiDeviceTest
      * @return the derived mRunName.
      * @throws RuntimeException if mTestModuleName, mTestConfigPath, and mTestCasePath are null.
      */
-    private String deriveRunName() {
+    private String deriveRunName() throws RuntimeException {
         if (mRunName != null) {
             return mRunName;
         }
@@ -753,7 +757,8 @@ public class VtsMultiDeviceTest
         } else {
             CLog.w("--test-module-name not set (not recommended); deriving automatically");
             if (mTestConfigPath != null) {
-                mRunName = new File(mTestConfigPath).getName().replace(CONFIG_FILE_EXTENSION, "");
+                mRunName = new File(mTestConfigPath).getName();
+                mRunName = mRunName.replace(CONFIG_FILE_EXTENSION, "");
             } else if (mTestCasePath != null) {
                 mRunName = new File(mTestCasePath).getName();
             } else {
@@ -993,6 +998,11 @@ public class VtsMultiDeviceTest
         if (mEnableProfiling) {
             jsonObject.put(ENABLE_PROFILING, mEnableProfiling);
             CLog.d("Added %s to the Json object", ENABLE_PROFILING);
+        }
+
+        if (mProfilingArgValue) {
+            jsonObject.put(PROFILING_ARG_VALUE, mProfilingArgValue);
+            CLog.d("Added %s to the Json object", PROFILING_ARG_VALUE);
         }
 
         if (mSaveTraceFileRemote) {
