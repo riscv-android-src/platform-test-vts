@@ -21,6 +21,7 @@
   <target_preparer class="com.android.tradefed.targetprep.VtsDevicePreparer">
     <option name="enable-adb-root" value="true"/>
     <option name="start-framework" value="true"/>
+    <option name="restore-framework" value="true"/>
   </target_preparer>
 
   <option name="compatibility:test-arg" value="com.android.tradefed.testtype.VtsMultiDeviceTest:enable-dashboard-uploading:false" />
