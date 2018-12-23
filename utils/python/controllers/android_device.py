@@ -28,6 +28,7 @@ import time
 import traceback
 
 from vts.runners.host import asserts
+from vts.runners.host import const
 from vts.runners.host import errors
 from vts.runners.host import keys
 from vts.runners.host import logger as vts_logger
@@ -923,9 +924,9 @@ class AndroidDevice(object):
             return False
 
         cmd = 'ps -g system | grep system_server'
-        res = self.adb.shell(cmd)
+        res = self.adb.shell(cmd, no_except=True)
 
-        return 'system_server' in res
+        return 'system_server' in res[const.STDOUT]
 
     def startFramework(self,
                        wait_for_completion=True,
@@ -975,7 +976,6 @@ class AndroidDevice(object):
         logging.debug("stopping Android framework")
         self.adb.shell("stop")
         self.setProp(SYSPROP_SYS_BOOT_COMPLETED, 0)
-        self.setProp(SYSPROP_DEV_BOOTCOMPLETE, 0)
         logging.info("Android framework stopped")
 
     def stop(self, stop_native_server=False):
@@ -1194,9 +1194,26 @@ class AndroidDevice(object):
                 raise
         event.End()
 
-    def stopServices(self):
-        """Stops long running services on the android device.
+    def Heal(self):
+        """Performs a self healing.
+
+        Includes self diagnosis that looks for any framework errors.
+
+        Returns:
+            bool, True if everything is ok; False otherwise.
         """
+        res = True
+
+        if self.shell:
+            res &= self.shell.Heal()
+
+        if not res:
+            logging.error('Self diagnosis found problems in Android device %s', self.serial)
+
+        return res
+
+    def stopServices(self):
+        """Stops long running services on the android device."""
         if self.adb_logcat_process:
             self.stopAdbLogcat()
         if getattr(self, "enable_sl4a", False):

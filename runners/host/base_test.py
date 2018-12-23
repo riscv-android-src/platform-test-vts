@@ -19,6 +19,7 @@ import os
 import re
 import sys
 import threading
+import time
 
 from vts.proto import VtsReportMessage_pb2 as ReportMsg
 from vts.runners.host import asserts
@@ -31,6 +32,7 @@ from vts.runners.host import signals
 from vts.runners.host import utils
 from vts.utils.python.controllers import adb
 from vts.utils.python.controllers import android_device
+from vts.utils.python.common import cmd_utils
 from vts.utils.python.common import filter_utils
 from vts.utils.python.common import list_utils
 from vts.utils.python.common import timeout_utils
@@ -111,6 +113,7 @@ class BaseTestClass(object):
         web: WebFeature, object storing web feature util for test run
         coverage: CoverageFeature, object storing coverage feature util for test run
         sancov: SancovFeature, object storing sancov feature util for test run
+        start_time_sec: int, time value in seconds when the module execution starts.
         start_vts_agents: whether to start vts agents when registering new
                           android devices.
         profiling: ProfilingFeature, object storing profiling feature util for test run
@@ -127,6 +130,7 @@ class BaseTestClass(object):
     start_vts_agents = True
 
     def __init__(self, configs):
+        self.start_time_sec = time.time()
         self.tests = []
         # Set all the controller objects and params.
         for name, value in configs.items():
@@ -440,7 +444,10 @@ class BaseTestClass(object):
         """
         event = tfi.Begin('_setUpClass method for test class',
                           tfi.categories.TEST_CLASS_SETUP)
-        self.resetTimeout(self.timeout)
+        timeout = self.timeout - time.time() + self.start_time_sec
+        if timeout < 0:
+            timeout = 1
+        self.resetTimeout(timeout)
         if not precondition_utils.MeetFirstApiLevelPrecondition(self):
             self.skipAllTests("The device's first API level doesn't meet the "
                               "precondition.")
@@ -509,7 +516,7 @@ class BaseTestClass(object):
         event_sub = tfi.Begin('tearDownClass method from test script',
                               tfi.categories.TEST_CLASS_TEARDOWN,
                               enable_logging=False)
-        ret = self.tearDownClass()
+        ret = self._exec_func(self.tearDownClass)
 
         event_sub.End()
 
@@ -617,6 +624,12 @@ class BaseTestClass(object):
         """
         event = tfi.Begin('_setUp method for test case',
                           tfi.categories.TEST_CASE_SETUP,)
+        if not self.Heal(passive=True):
+            msg = 'Framework self diagnose didn\'t pass for %s. Marking test as fail.' % test_name
+            logging.error(msg)
+            event.Remove(msg)
+            asserts.fail(msg)
+
         if self.systrace.enabled:
             self.systrace.StartSystrace()
 
@@ -646,14 +659,14 @@ class BaseTestClass(object):
         """Proxy function to guarantee the base implementation of tearDown
         is called.
         """
-        event = tfi.Begin('_tearDown method for test case',
+        event = tfi.Begin('_tearDown method from base_test',
                           tfi.categories.TEST_CASE_TEARDOWN)
         if self.systrace.enabled:
-            self.systrace.ProcessAndUploadSystrace(test_name)
-        event_sub = tfi.Begin('_setUp method from test script',
+            self._exec_func(self.systrace.ProcessAndUploadSystrace, test_name)
+        event_sub = tfi.Begin('_tearDown method from test script',
                               tfi.categories.TEST_CASE_TEARDOWN,
                               enable_logging=False)
-        self.tearDown()
+        self._exec_func(self.tearDown)
         event_sub.End()
         event.End()
 
@@ -1193,6 +1206,63 @@ class BaseTestClass(object):
         tests = self._get_test_funcs(test_names)
         return tests
 
+    def _DiagnoseHost(self):
+        """Runs diagnosis commands on host and logs the results."""
+        commands = ['ps aux | grep adb',
+                    'adb --version',
+                    'adb devices']
+        for cmd in commands:
+            results = cmd_utils.ExecuteShellCommand(cmd)
+            logging.debug('host diagnosis command %s', cmd)
+            logging.debug('               output: %s', results[cmd_utils.STDOUT][0])
+
+    def _DiagnoseDevice(self, device):
+        """Runs diagnosis commands on device and logs the results."""
+        commands = ['ps aux | grep vts',
+                    'cat /proc/meminfo']
+        for cmd in commands:
+            results = device.adb.shell(cmd, no_except=True)
+            logging.debug('device diagnosis command %s', cmd)
+            logging.debug('                 output: %s', results[const.STDOUT])
+
+    def Heal(self, passive=False, timeout=900):
+        """Performs a self healing.
+
+        Includes self diagnosis that looks for any framework or device state errors.
+        Includes self recovery that attempts to correct discovered errors.
+
+        Args:
+            passive: bool, whether to perform passive only self-check. A passive check means
+                     only to check known status stored in memory. No command will be issued
+                     to host or device - which makes the check fast.
+            timeout: int, timeout in seconds.
+
+        Returns:
+            bool, True if everything is ok. Fales if some error is not recoverable.
+        """
+        start = time.time()
+
+        if not passive:
+            available_devices = android_device.list_adb_devices()
+            self._DiagnoseHost()
+
+            for device in self.android_devices:
+                if device.serial not in available_devices:
+                    logging.warn('device %s become unavailable after tests. recovering...',
+                                 device.serial)
+                    _timeout = timeout - time.time() + start
+                    if _timeout < 0 or not device.waitForBootCompletion(timeout=_timeout):
+                        logging.error('failed to restore device %s', device.serial)
+                        return False
+                    device.rootAdb()
+                    device.stopServices()
+                    device.startServices()
+                    self._DiagnoseHost()
+                else:
+                    self._DiagnoseDevice(device)
+
+        return all(map(lambda device: device.Heal(), self.android_devices))
+
     def runTestsWithRetry(self, tests):
         """Run tests with retry and collect test results.
 
@@ -1201,6 +1271,11 @@ class BaseTestClass(object):
         """
         for count in range(self.max_retry_count + 1):
             if count:
+                if not self.Heal():
+                    logging.error('Self heal failed. '
+                                  'Some error is not recoverable within time constraint.')
+                    return
+
                 include_filter = map(lambda item: item.test_name,
                                      self.results.getNonPassingRecords(skipped=False))
                 self._test_filter_retry = filter_utils.Filter(include_filter=include_filter)
