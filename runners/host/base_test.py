@@ -19,6 +19,7 @@ import os
 import re
 import sys
 import threading
+import time
 
 from vts.proto import VtsReportMessage_pb2 as ReportMsg
 from vts.runners.host import asserts
@@ -31,10 +32,14 @@ from vts.runners.host import signals
 from vts.runners.host import utils
 from vts.utils.python.controllers import adb
 from vts.utils.python.controllers import android_device
+from vts.utils.python.common import cmd_utils
 from vts.utils.python.common import filter_utils
 from vts.utils.python.common import list_utils
+from vts.utils.python.common import timeout_utils
 from vts.utils.python.coverage import coverage_utils
 from vts.utils.python.coverage import sancov_utils
+from vts.utils.python.instrumentation import test_framework_instrumentation as tfi
+from vts.utils.python.io import file_util
 from vts.utils.python.precondition import precondition_utils
 from vts.utils.python.profiling import profiling_utils
 from vts.utils.python.reporting import log_uploading_utils
@@ -49,7 +54,8 @@ TEST_CASE_TEMPLATE = "[Test Case] %s %s"
 RESULT_LINE_TEMPLATE = TEST_CASE_TEMPLATE + " %s"
 STR_TEST = "test"
 STR_GENERATE = "generate"
-TEARDOWN_CLASS_TIMEOUT_SECS = 30
+TIMEOUT_SECS_LOG_UPLOADING = 60
+TIMEOUT_SECS_TEARDOWN_CLASS = 30
 _REPORT_MESSAGE_FILE_NAME = "report_proto.msg"
 _BUG_REPORT_FILE_PREFIX = "bugreport_"
 _BUG_REPORT_FILE_EXTENSION = ".zip"
@@ -107,6 +113,7 @@ class BaseTestClass(object):
         web: WebFeature, object storing web feature util for test run
         coverage: CoverageFeature, object storing coverage feature util for test run
         sancov: SancovFeature, object storing sancov feature util for test run
+        start_time_sec: int, time value in seconds when the module execution starts.
         start_vts_agents: whether to start vts agents when registering new
                           android devices.
         profiling: ProfilingFeature, object storing profiling feature util for test run
@@ -114,36 +121,34 @@ class BaseTestClass(object):
                                 of failed test cases. Default is False
         _logcat_on_failure: bool, whether to dump logcat at the end
                                 of failed test cases. Default is True
+        _is_final_run: bool, whether the current test run is the final run during retry.
         test_filter: Filter object to filter test names.
+        _test_filter_retry: Filter object for retry filtering.
+        max_retry_count: int, max number of retries.
     """
+    _current_record = None
     start_vts_agents = True
 
     def __init__(self, configs):
+        self.start_time_sec = time.time()
         self.tests = []
         # Set all the controller objects and params.
         for name, value in configs.items():
             setattr(self, name, value)
         self.results = records.TestResult()
         self.log = logger.LoggerProxy()
-        self._current_record = None
 
         # Timeout
         self._interrupted = False
         self._interrupt_lock = threading.Lock()
         self._timer = None
-        self.timeout = self.getUserParam(
-            keys.ConfigKeys.KEY_TEST_TIMEOUT,
-            default_value=_DEFAULT_TEST_TIMEOUT_SECS * 1000.0)
-        try:
-            self.timeout = float(self.timeout) / 1000.0
-        except (TypeError, ValueError):
-            logging.error("Cannot parse timeout: %s", self.timeout)
-            self.timeout = _DEFAULT_TEST_TIMEOUT_SECS
-        if self.timeout <= 0:
-            logging.error("Invalid timeout: %s", self.timeout)
-            self.timeout = _DEFAULT_TEST_TIMEOUT_SECS
+
+        timeout_milli = self.getUserParam(keys.ConfigKeys.KEY_TEST_TIMEOUT, 0)
+        self.timeout = timeout_milli / 1000 if timeout_milli > 0 else _DEFAULT_TEST_TIMEOUT_SECS
 
         # Setup test filters
+        # TODO(yuexima): remove include_filter and exclude_filter from class attributes
+        # after confirming all modules no longer have reference to them
         self.include_filter = self.getUserParam(
             [
                 keys.ConfigKeys.KEY_TEST_SUITE,
@@ -157,27 +162,13 @@ class BaseTestClass(object):
             ],
             default_value=[])
 
-        # TODO(yuexima): remove include_filter and exclude_filter from class attributes
-        # after confirming all modules no longer have reference to them
-        self.include_filter = list_utils.ExpandItemDelimiters(
-            list_utils.ItemsToStr(self.include_filter), ',')
-        self.exclude_filter = list_utils.ExpandItemDelimiters(
-            list_utils.ItemsToStr(self.exclude_filter), ',')
-        exclude_over_include = self.getUserParam(
-            keys.ConfigKeys.KEY_EXCLUDE_OVER_INCLUDE, default_value=None)
         self.test_module_name = self.getUserParam(
             keys.ConfigKeys.KEY_TESTBED_NAME,
             warn_if_not_found=True,
             default_value=self.__class__.__name__)
-        self.test_filter = filter_utils.Filter(
-            self.include_filter,
-            self.exclude_filter,
-            enable_regex=True,
-            exclude_over_include=exclude_over_include,
-            enable_negative_pattern=True,
-            enable_module_name_prefix_matching=True,
-            module_name=self.test_module_name,
-            expand_bitness=True)
+
+        self.updateTestFilter()
+
         logging.debug('Test filter: %s' % self.test_filter)
 
         # TODO: get abi information differently for multi-device support.
@@ -192,6 +183,9 @@ class BaseTestClass(object):
             keys.ConfigKeys.IKEY_SKIP_ON_64BIT_ABI, default_value=False)
         self.run_32bit_on_64bit_abi = self.getUserParam(
             keys.ConfigKeys.IKEY_RUN_32BIT_ON_64BIT_ABI, default_value=False)
+        self.max_retry_count = self.getUserParam(
+            keys.ConfigKeys.IKEY_MAX_RETRY_COUNT, default_value=0)
+
         self.web = web_utils.WebFeature(self.user_params)
         self.coverage = coverage_utils.CoverageFeature(
             self.user_params, web=self.web)
@@ -213,14 +207,23 @@ class BaseTestClass(object):
             keys.ConfigKeys.IKEY_BUG_REPORT_ON_FAILURE, default_value=False)
         self._logcat_on_failure = self.getUserParam(
             keys.ConfigKeys.IKEY_LOGCAT_ON_FAILURE, default_value=True)
+        self._test_filter_retry = None
 
     @property
     def android_devices(self):
         """Returns a list of AndroidDevice objects"""
         if not hasattr(self, _ANDROID_DEVICES):
+            event = tfi.Begin('base_test registering android_device. '
+                              'Start agents: %s' % self.start_vts_agents,
+                              tfi.categories.FRAMEWORK_SETUP)
             setattr(self, _ANDROID_DEVICES,
                     self.registerController(android_device,
                                             start_services=self.start_vts_agents))
+            event.End()
+
+            for device in getattr(self, _ANDROID_DEVICES):
+                device.shell_default_nohup = self.getUserParam(
+                    keys.ConfigKeys.SHELL_DEFAULT_NOHUP, default_value=True)
         return getattr(self, _ANDROID_DEVICES)
 
     @android_devices.setter
@@ -233,6 +236,26 @@ class BaseTestClass(object):
 
     def __exit__(self, *args):
         self._exec_func(self.cleanUp)
+
+    def updateTestFilter(self):
+        """Updates test filter using include and exclude filters."""
+        self.include_filter = list_utils.ExpandItemDelimiters(
+            list_utils.ItemsToStr(self.include_filter), ',')
+        self.exclude_filter = list_utils.ExpandItemDelimiters(
+            list_utils.ItemsToStr(self.exclude_filter), ',')
+
+        exclude_over_include = self.getUserParam(
+            keys.ConfigKeys.KEY_EXCLUDE_OVER_INCLUDE, default_value=None)
+
+        self.test_filter = filter_utils.Filter(
+            self.include_filter,
+            self.exclude_filter,
+            enable_regex=True,
+            exclude_over_include=exclude_over_include,
+            enable_negative_pattern=True,
+            enable_module_name_prefix_matching=True,
+            module_name=self.test_module_name,
+            expand_bitness=True)
 
     def unpack_userparams(self, req_param_names=[], opt_param_names=[], **kwargs):
         """Wrapper for test cases using ACTS runner API."""
@@ -419,8 +442,12 @@ class BaseTestClass(object):
         """Proxy function to guarantee the base implementation of setUpClass
         is called.
         """
-        self.resetTimeout(self.timeout)
-
+        event = tfi.Begin('_setUpClass method for test class',
+                          tfi.categories.TEST_CLASS_SETUP)
+        timeout = self.timeout - time.time() + self.start_time_sec
+        if timeout < 0:
+            timeout = 1
+        self.resetTimeout(timeout)
         if not precondition_utils.MeetFirstApiLevelPrecondition(self):
             self.skipAllTests("The device's first API level doesn't meet the "
                               "precondition.")
@@ -457,7 +484,14 @@ class BaseTestClass(object):
         for device in self.android_devices:
             device.waitForProcessStop(native_server_process_names)
 
-        return self.setUpClass()
+
+        event_sub = tfi.Begin('setUpClass method from test script',
+                              tfi.categories.TEST_CLASS_SETUP,
+                              enable_logging=False)
+        result = self.setUpClass()
+        event_sub.End()
+        event.End()
+        return result
 
     def setUpClass(self):
         """Setup function that will be called before executing any test case in
@@ -475,16 +509,28 @@ class BaseTestClass(object):
         """Proxy function to guarantee the base implementation of tearDownClass
         is called.
         """
-        ret = self.tearDownClass()
+        event = tfi.Begin('_tearDownClass method for test class',
+                          tfi.categories.TEST_CLASS_TEARDOWN)
+        self.resetTimeout(TIMEOUT_SECS_TEARDOWN_CLASS)
 
-        self.resetTimeout(TEARDOWN_CLASS_TIMEOUT_SECS)
-        if self.log_uploading.enabled:
-            self.log_uploading.UploadLogs()
+        event_sub = tfi.Begin('tearDownClass method from test script',
+                              tfi.categories.TEST_CLASS_TEARDOWN,
+                              enable_logging=False)
+        ret = self._exec_func(self.tearDownClass)
+
+        event_sub.End()
+
         if self.web.enabled:
             if self.results.class_errors:
                 # Create a result to make the module shown as failure.
                 self.web.AddTestReport("setup_class")
                 self.web.SetTestResult(ReportMsg.TEST_CASE_RESULT_FAIL)
+
+            # Attach log destination urls to proto message so the urls will be
+            # recorded and uploaded to dashboard. The actual log uploading is postponed
+            # after generating report message to prevent failure due to timeout of log uploading.
+            self.log_uploading.UploadLogs(dryrun=True)
+
             message_b = self.web.GenerateReportMessage(self.results.requested,
                                                        self.results.executed)
         else:
@@ -499,6 +545,21 @@ class BaseTestClass(object):
         with open(report_proto_path, "wb") as f:
             f.write(message_b)
 
+        self.cancelTimeout()
+
+        if self.log_uploading.enabled:
+            @timeout_utils.timeout(TIMEOUT_SECS_LOG_UPLOADING,
+                                   message='_tearDownClass method in base_test timed out.',
+                                   no_exception=True)
+            def _executeLogUpload(_log_uploading):
+                _log_uploading.UploadLogs()
+
+            event_upload = tfi.Begin('Log upload',
+                                     tfi.categories.RESULT_PROCESSING)
+            _executeLogUpload(self.log_uploading)
+            event_upload.End()
+
+        event.End()
         return ret
 
     def tearDownClass(self):
@@ -517,7 +578,18 @@ class BaseTestClass(object):
                 return
             self._interrupted = True
 
-        utils.stop_current_process(TEARDOWN_CLASS_TIMEOUT_SECS)
+        utils.stop_current_process(TIMEOUT_SECS_TEARDOWN_CLASS)
+
+    def cancelTimeout(self):
+        """Cancels main thread timer."""
+        with self._interrupt_lock:
+            if self._interrupted:
+                logging.warning("Test execution has been interrupted. "
+                                "Cannot cancel or reset timeout.")
+                return
+
+        if self._timer:
+            self._timer.cancel()
 
     def resetTimeout(self, timeout):
         """Restarts the timer that will interrupt the main thread.
@@ -528,17 +600,9 @@ class BaseTestClass(object):
         Args:
             timeout: A float, wait time in seconds before interrupt.
         """
-        with self._interrupt_lock:
-            if self._interrupted:
-                logging.warning("Test execution has been interrupted. "
-                                "Cannot reset timeout.")
-                return
+        self.cancelTimeout()
 
-        if self._timer:
-            logging.info("Cancel timer.")
-            self._timer.cancel()
-
-        logging.info("Start timer with timeout=%ssec.", timeout)
+        logging.debug("Start timer with timeout=%ssec.", timeout)
         self._timer = threading.Timer(timeout, self.interrupt)
         self._timer.daemon = True
         self._timer.start()
@@ -558,9 +622,23 @@ class BaseTestClass(object):
         """Proxy function to guarantee the base implementation of setUp is
         called.
         """
+        event = tfi.Begin('_setUp method for test case',
+                          tfi.categories.TEST_CASE_SETUP,)
+        if not self.Heal(passive=True):
+            msg = 'Framework self diagnose didn\'t pass for %s. Marking test as fail.' % test_name
+            logging.error(msg)
+            event.Remove(msg)
+            asserts.fail(msg)
+
         if self.systrace.enabled:
             self.systrace.StartSystrace()
-        return self.setUp()
+
+        event_sub = tfi.Begin('_setUp method from test script',
+                              tfi.categories.TEST_CASE_SETUP,
+                              enable_logging=False)
+        result = self.setUp()
+        event_sub.End()
+        event.End()
 
     def setUp(self):
         """Setup function that will be called every time before executing each
@@ -581,9 +659,16 @@ class BaseTestClass(object):
         """Proxy function to guarantee the base implementation of tearDown
         is called.
         """
+        event = tfi.Begin('_tearDown method from base_test',
+                          tfi.categories.TEST_CASE_TEARDOWN)
         if self.systrace.enabled:
-            self.systrace.ProcessAndUploadSystrace(test_name)
-        self.tearDown()
+            self._exec_func(self.systrace.ProcessAndUploadSystrace, test_name)
+        event_sub = tfi.Begin('_tearDown method from test script',
+                              tfi.categories.TEST_CASE_TEARDOWN,
+                              enable_logging=False)
+        self._exec_func(self.tearDown)
+        event_sub.End()
+        event.End()
 
     def tearDown(self):
         """Teardown function that will be called every time a test case has
@@ -603,11 +688,16 @@ class BaseTestClass(object):
                       record.test_name, record.result)
         if self.web.enabled:
             self.web.SetTestResult(ReportMsg.TEST_CASE_RESULT_FAIL)
+
+        event = tfi.Begin('_onFail method from BaseTest',
+                          tfi.categories.FAILED_TEST_CASE_PROCESSING,
+                          enable_logging=False)
         self.onFail(record.test_name, begin_time)
         if self._bug_report_on_failure:
-            self.DumpBugReport(ecord.test_name)
+            self.DumpBugReport(record.test_name)
         if self._logcat_on_failure:
             self.DumpLogcat(record.test_name)
+        event.End()
 
     def onFail(self, test_name, begin_time):
         """A function that is executed upon a test case failure.
@@ -624,16 +714,15 @@ class BaseTestClass(object):
         called.
         """
         record = self._current_record
-        test_name = record.test_name
         begin_time = logger.epochToLogLineTimestamp(record.begin_time)
         msg = record.details
         if msg:
             logging.debug(msg)
         logging.info(RESULT_LINE_TEMPLATE, self.results.progressStr,
-                     test_name, record.result)
+                     record.test_name, record.result)
         if self.web.enabled:
             self.web.SetTestResult(ReportMsg.TEST_CASE_RESULT_PASS)
-        self.onPass(test_name, begin_time)
+        self.onPass(record.test_name, begin_time)
 
     def onPass(self, test_name, begin_time):
         """A function that is executed upon a test case passing.
@@ -650,14 +739,13 @@ class BaseTestClass(object):
         called.
         """
         record = self._current_record
-        test_name = record.test_name
         begin_time = logger.epochToLogLineTimestamp(record.begin_time)
         logging.info(RESULT_LINE_TEMPLATE, self.results.progressStr,
-                     test_name, record.result)
+                     record.test_name, record.result)
         logging.debug("Reason to skip: %s", record.details)
         if self.web.enabled:
             self.web.SetTestResult(ReportMsg.TEST_CASE_RESULT_SKIP)
-        self.onSkip(test_name, begin_time)
+        self.onSkip(record.test_name, begin_time)
 
     def onSkip(self, test_name, begin_time):
         """A function that is executed upon a test case being skipped.
@@ -674,11 +762,10 @@ class BaseTestClass(object):
         called.
         """
         record = self._current_record
-        test_name = record.test_name
         begin_time = logger.epochToLogLineTimestamp(record.begin_time)
         if self.web.enabled:
             self.web.SetTestResult(None)
-        self.onSilent(test_name, begin_time)
+        self.onSilent(record.test_name, begin_time)
 
     def onSilent(self, test_name, begin_time):
         """A function that is executed upon a test case being marked as silent.
@@ -695,16 +782,20 @@ class BaseTestClass(object):
         is called.
         """
         record = self._current_record
-        test_name = record.test_name
         logging.exception(record.details)
         begin_time = logger.epochToLogLineTimestamp(record.begin_time)
         if self.web.enabled:
             self.web.SetTestResult(ReportMsg.TEST_CASE_RESULT_EXCEPTION)
-        self.onException(test_name, begin_time)
+
+        event = tfi.Begin('_onFail method from BaseTest',
+                          tfi.categories.FAILED_TEST_CASE_PROCESSING,
+                          enable_logging=False)
+        self.onException(record.test_name, begin_time)
         if self._bug_report_on_failure:
             self.DumpBugReport(ecord.test_name)
         if self._logcat_on_failure:
             self.DumpLogcat(record.test_name)
+        event.End()
 
     def onException(self, test_name, begin_time):
         """A function that is executed upon an unhandled exception from a test
@@ -730,6 +821,14 @@ class BaseTestClass(object):
             func: The procedure function to be executed.
         """
         record = self._current_record
+
+        if (func not in (self._onPass, self._onSilent, self._onSkip)
+            and not self._is_final_run):
+            logging.debug('Skipping test failure procedure function during retry')
+            logging.info(RESULT_LINE_TEMPLATE, self.results.progressStr,
+                         record.test_name, 'RETRY')
+            return
+
         if record is None:
             logging.error("Cannot execute %s. No record for current test.",
                           func.__name__)
@@ -783,6 +882,15 @@ class BaseTestClass(object):
             signals.TestSilent if a test should not be executed
             signals.TestSkip if a test should be logged but not be executed
         """
+        if self._test_filter_retry and not self._test_filter_retry.Filter(test_name):
+            # TODO: TestSilent will remove test case from record,
+            #       TestSkip will record test skip with a reason.
+            #       skip during retry is neither of these, as the test should be skipped,
+            #       not being recorded and not being deleted.
+            #       Create a new signal type if callers outside this class wants to distinguish
+            #       between these skip types.
+            raise signals.TestSkip('Skipping completed tests in retry run attempt.')
+
         self._filterOneTestThroughTestFilter(test_name, test_filter)
         self._filterOneTestThroughAbiBitness(test_name)
 
@@ -838,6 +946,9 @@ class BaseTestClass(object):
             args: A tuple of params.
             kwargs: Extra kwargs.
         """
+        if self._test_filter_retry and not self._test_filter_retry.Filter(test_name):
+            return
+
         is_silenced = False
         tr_record = records.TestResultRecord(test_name, self.test_module_name)
         tr_record.testBegin()
@@ -857,10 +968,13 @@ class BaseTestClass(object):
                 asserts.assertTrue(ret is not False,
                                    "Setup for %s failed." % test_name)
 
+                event_test = tfi.Begin("test function",
+                                       tfi.categories.TEST_CASE_EXECUTION)
                 if args or kwargs:
                     verdict = test_func(*args, **kwargs)
                 else:
                     verdict = test_func()
+                event_test.End()
                 finished = True
             finally:
                 self._tearDown(test_name)
@@ -876,11 +990,13 @@ class BaseTestClass(object):
         except (signals.TestAbortClass, acts_signals.TestAbortClass) as e:
             # Abort signals, pass along.
             tr_record.testFail(e)
+            self._is_final_run = True
             finished = True
             raise signals.TestAbortClass, e, sys.exc_info()[2]
         except (signals.TestAbortAll, acts_signals.TestAbortAll) as e:
             # Abort signals, pass along.
             tr_record.testFail(e)
+            self._is_final_run = True
             finished = True
             raise signals.TestAbortAll, e, sys.exc_info()[2]
         except (signals.TestPass, acts_signals.TestPass) as e:
@@ -991,7 +1107,10 @@ class BaseTestClass(object):
             test_name = GenerateTestName(setting)
             previous_success_cnt = len(self.results.passed)
 
+            event_exec = tfi.Begin('BaseTest execOneTest method for generated tests',
+                                   enable_logging=False)
             self.execOneTest(test_name, test_func, (setting, ) + args, **kwargs)
+            event_exec.End()
             if len(self.results.passed) - previous_success_cnt != 1:
                 failed_settings.append(setting)
 
@@ -1087,14 +1206,106 @@ class BaseTestClass(object):
         tests = self._get_test_funcs(test_names)
         return tests
 
+    def _DiagnoseHost(self):
+        """Runs diagnosis commands on host and logs the results."""
+        commands = ['ps aux | grep adb',
+                    'adb --version',
+                    'adb devices']
+        for cmd in commands:
+            results = cmd_utils.ExecuteShellCommand(cmd)
+            logging.debug('host diagnosis command %s', cmd)
+            logging.debug('               output: %s', results[cmd_utils.STDOUT][0])
+
+    def _DiagnoseDevice(self, device):
+        """Runs diagnosis commands on device and logs the results."""
+        commands = ['ps aux | grep vts',
+                    'cat /proc/meminfo']
+        for cmd in commands:
+            results = device.adb.shell(cmd, no_except=True)
+            logging.debug('device diagnosis command %s', cmd)
+            logging.debug('                 output: %s', results[const.STDOUT])
+
+    def Heal(self, passive=False, timeout=900):
+        """Performs a self healing.
+
+        Includes self diagnosis that looks for any framework or device state errors.
+        Includes self recovery that attempts to correct discovered errors.
+
+        Args:
+            passive: bool, whether to perform passive only self-check. A passive check means
+                     only to check known status stored in memory. No command will be issued
+                     to host or device - which makes the check fast.
+            timeout: int, timeout in seconds.
+
+        Returns:
+            bool, True if everything is ok. Fales if some error is not recoverable.
+        """
+        start = time.time()
+
+        if not passive:
+            available_devices = android_device.list_adb_devices()
+            self._DiagnoseHost()
+
+            for device in self.android_devices:
+                if device.serial not in available_devices:
+                    logging.warn('device %s become unavailable after tests. recovering...',
+                                 device.serial)
+                    _timeout = timeout - time.time() + start
+                    if _timeout < 0 or not device.waitForBootCompletion(timeout=_timeout):
+                        logging.error('failed to restore device %s', device.serial)
+                        return False
+                    device.rootAdb()
+                    device.stopServices()
+                    device.startServices()
+                    self._DiagnoseHost()
+                else:
+                    self._DiagnoseDevice(device)
+
+        return all(map(lambda device: device.Heal(), self.android_devices))
+
+    def runTestsWithRetry(self, tests):
+        """Run tests with retry and collect test results.
+
+        Args:
+            tests: A list of tests to be run.
+        """
+        for count in range(self.max_retry_count + 1):
+            if count:
+                if not self.Heal():
+                    logging.error('Self heal failed. '
+                                  'Some error is not recoverable within time constraint.')
+                    return
+
+                include_filter = map(lambda item: item.test_name,
+                                     self.results.getNonPassingRecords(skipped=False))
+                self._test_filter_retry = filter_utils.Filter(include_filter=include_filter)
+                logging.info('Automatically retrying %s test cases. Run attempt %s of %s',
+                             len(include_filter),
+                             count + 1,
+                             self.max_retry_count + 1)
+                msg = 'Retrying the following test cases: %s' % include_filter
+                logging.debug(msg)
+
+                path_retry_log = os.path.join(logging.log_path, 'retry_log.txt')
+                with open(path_retry_log) as f:
+                    f.write(msg + '\n')
+
+            self._is_final_run = count == self.max_retry_count
+
+            try:
+                self.runTests(tests)
+            except Exception as e:
+                if self._is_final_run:
+                    raise e
+
+            if self._is_final_run:
+                break
+
     def runTests(self, tests):
         """Run tests and collect test results.
 
         Args:
             tests: A list of tests to be run.
-
-        Returns:
-            The test results object of this class.
         """
         # Setup for the class with retry.
         for i in xrange(_SETUP_RETRY_NUMBER):
@@ -1116,7 +1327,8 @@ class BaseTestClass(object):
                     self.results.failClass(self.test_module_name,
                                            caught_exception)
                     self._exec_func(self._tearDownClass)
-                    return self.results
+                    self._is_final_run = True
+                    return
                 else:
                     # restart services before retry setup.
                     for device in self.android_devices:
@@ -1131,7 +1343,7 @@ class BaseTestClass(object):
             if self.run_as_vts_self_test:
                 logging.debug('setUpClass function was executed successfully.')
                 self.results.passClass(self.test_module_name)
-                return self.results
+                return
 
             for test_name, test_func in tests:
                 if test_name.startswith(STR_GENERATE):
@@ -1141,19 +1353,22 @@ class BaseTestClass(object):
                     test_func()
                     logging.debug("Finished '%s'", test_name)
                 else:
+                    event_exec = tfi.Begin('BaseTest execOneTest method for individual tests',
+                                           enable_logging=False)
                     self.execOneTest(test_name, test_func, None)
+                    event_exec.End()
             if self.isSkipAllTests() and not self.results.executed:
                 self.results.skipClass(
                     self.test_module_name,
                     "All test cases skipped; unable to find any test case.")
-            return self.results
         except (signals.TestAbortClass, acts_signals.TestAbortClass) as e:
             logging.error("Received TestAbortClass signal")
             class_error = e
-            return self.results
+            self._is_final_run = True
         except (signals.TestAbortAll, acts_signals.TestAbortAll) as e:
             logging.error("Received TestAbortAll signal")
             class_error = e
+            self._is_final_run = True
             # Piggy-back test results on this exception object so we don't lose
             # results from this test class.
             setattr(e, "results", self.results)
@@ -1164,14 +1379,21 @@ class BaseTestClass(object):
             class_error = e
             raise e
         finally:
-            if class_error:
+            if not self.results.getNonPassingRecords(skipped=False):
+                self._is_final_run = True
+
+            if class_error and self._is_final_run:
                 self.results.failClass(self.test_module_name, class_error)
+
             self._exec_func(self._tearDownClass)
-            if self.web.enabled:
-                name, timestamp = self.web.GetTestModuleKeys()
-                self.results.setTestModuleKeys(name, timestamp)
-            logging.info("Summary for test class %s: %s",
-                         self.test_module_name, self.results.summary())
+
+            if self._is_final_run:
+                if self.web.enabled:
+                    name, timestamp = self.web.GetTestModuleKeys()
+                    self.results.setTestModuleKeys(name, timestamp)
+
+                logging.info("Summary for test class %s: %s",
+                             self.test_module_name, self.results.summary())
 
     def run(self, test_names=None):
         """Runs test cases within a test class by the order they appear in the
@@ -1202,7 +1424,10 @@ class BaseTestClass(object):
                 records.TestResultRecord(test_name, self.test_module_name)
                 for test_name,_ in tests if test_name.startswith(STR_TEST)
             ]
-        return self.runTests(tests)
+
+        self.runTestsWithRetry(tests)
+
+        return self.results
 
     def cleanUp(self):
         """A function that is executed upon completion of all tests cases
@@ -1219,8 +1444,16 @@ class BaseTestClass(object):
             prefix: string, file name prefix. Usually in format of
                     <test_module>-<test_case>
         """
+        event = tfi.Begin('dump Bugreport',
+                          tfi.categories.FAILED_TEST_CASE_PROCESSING)
         if prefix:
             prefix = re.sub('[^\w\-_\. ]', '_', prefix) + '_'
+
+        parent_dir = os.path.join(logging.log_path, 'bugreport')
+
+        if not file_util.Mkdir(parent_dir):
+            logging.error('Failed to create bugreport output directory %s', parent_dir)
+            return
 
         for device in self.android_devices:
             file_name = (_BUG_REPORT_FILE_PREFIX
@@ -1228,11 +1461,26 @@ class BaseTestClass(object):
                          + '_%s' % device.serial
                          + _BUG_REPORT_FILE_EXTENSION)
 
-            file_path = os.path.join(logging.log_path,
-                                     file_name)
+            file_path = os.path.join(parent_dir, file_name)
 
             logging.info('Dumping bugreport %s...' % file_path)
             device.adb.bugreport(file_path)
+        event.End()
+
+    def skipAllTestsIf(self, condition, msg):
+        """Skip all test cases if the given condition is true.
+
+        This method is usually called in setup functions when a precondition
+        to the test module is not met.
+
+        Args:
+            condition: object that can be evaluated by bool(), a condition that
+                       will trigger skipAllTests if evaluated to be True.
+            msg: string, reason why tests are skipped. If set to None or empty
+            string, a default message will be used (not recommended)
+        """
+        if condition:
+            self.skipAllTests(msg)
 
     def skipAllTests(self, msg):
         """Skip all test cases.
@@ -1281,10 +1529,20 @@ class BaseTestClass(object):
             prefix: string, file name prefix. Usually in format of
                     <test_module>-<test_case>
         """
+        event = tfi.Begin('dump logcat',
+                          tfi.categories.FAILED_TEST_CASE_PROCESSING)
         if prefix:
             prefix = re.sub('[^\w\-_\. ]', '_', prefix) + '_'
 
+        parent_dir = os.path.join(logging.log_path, 'logcat')
+
+        if not file_util.Mkdir(parent_dir):
+            logging.error('Failed to create bugreport output directory %s', parent_dir)
+            return
+
         for device in self.android_devices:
+            if not device.isAdbLogcatOn:
+                continue
             for buffer in LOGCAT_BUFFERS:
                 file_name = (_LOGCAT_FILE_PREFIX
                              + prefix
@@ -1292,8 +1550,8 @@ class BaseTestClass(object):
                              + device.serial
                              + _LOGCAT_FILE_EXTENSION)
 
-                file_path = os.path.join(logging.log_path,
-                                         file_name)
+                file_path = os.path.join(parent_dir, file_name)
 
                 logging.info('Dumping logcat %s...' % file_path)
                 device.adb.logcat('-b', buffer, '-d', '>', file_path)
+        event.End()

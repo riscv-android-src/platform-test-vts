@@ -17,6 +17,7 @@
 package com.android.tradefed.device.metric;
 
 import com.android.annotations.VisibleForTesting;
+import com.android.compatibility.common.tradefed.build.VtsCompatibilityInvocationHelper;
 import com.android.tradefed.build.IBuildInfo;
 import com.android.tradefed.config.OptionClass;
 import com.android.tradefed.device.DeviceNotAvailableException;
@@ -30,6 +31,7 @@ import com.android.tradefed.util.RunInterruptedException;
 import com.android.tradefed.util.VtsPythonRunnerHelper;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.util.Map;
 /**
  * A {@link IMetricCollector} that enables vts coverage measurement during a
@@ -62,14 +64,18 @@ public class VtsCoverageCollector extends BaseDeviceMetricCollector {
             return;
         }
         if (mPythonRunnerHelper == null) {
-            mPythonRunnerHelper = new VtsPythonRunnerHelper(buildInfo);
+            File workingDir = null;
+            VtsCompatibilityInvocationHelper invocationHelper = createInvocationHelper();
+            try {
+                workingDir = invocationHelper.getTestsDir();
+            } catch (FileNotFoundException e) {
+                CLog.e("VtsCompatibilityInvocationHelper cannot find test case directory. "
+                        + "Command working directory not set.");
+            }
+            mPythonRunnerHelper = new VtsPythonRunnerHelper(buildInfo, workingDir);
         }
         for (ITestDevice device : getDevices()) {
             String serial = device.getSerialNumber();
-            if (serial == null) {
-                CLog.e("Could not get device serial number.");
-                return;
-            }
             String gcovDirPath = getGcoveResrouceDir(buildInfo, device);
             if (gcovDirPath == null) {
                 CLog.e("Could not get gcov resource dir path.");
@@ -112,5 +118,13 @@ public class VtsCoverageCollector extends BaseDeviceMetricCollector {
     @VisibleForTesting
     void setPythonRunnerHelper(VtsPythonRunnerHelper pythonRunnerHelper) {
         mPythonRunnerHelper = pythonRunnerHelper;
+    }
+
+    /**
+     * Creates a {@link VtsCompatibilityInvocationHelper} to get the working directory.
+     */
+    @VisibleForTesting
+    protected VtsCompatibilityInvocationHelper createInvocationHelper() {
+        return new VtsCompatibilityInvocationHelper();
     }
 }

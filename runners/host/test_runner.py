@@ -34,6 +34,7 @@ from vts.runners.host import logger
 from vts.runners.host import records
 from vts.runners.host import signals
 from vts.runners.host import utils
+from vts.utils.python.instrumentation import test_framework_instrumentation as tfi
 
 
 def main():
@@ -51,6 +52,7 @@ def main():
     Returns:
         The TestResult object that holds the results of the test run.
     """
+    event = tfi.Begin('Test runner main method')
     test_classes = []
     main_module_members = sys.modules["__main__"]
     for _, module_member in main_module_members.__dict__.items():
@@ -65,6 +67,8 @@ def main():
                       len(test_classes), test_classes)
         sys.exit(1)
     test_result = runTestClass(test_classes[0])
+    event.End()
+    tfi.CompileResults()
     return test_result
 
 
@@ -107,7 +111,7 @@ def runTestClass(test_class):
                 line = sys.stdin.readline()
                 if not line:
                     break
-            utils.stop_current_process(base_test.TEARDOWN_CLASS_TIMEOUT_SECS)
+            utils.stop_current_process(base_test.TIMEOUT_SECS_TEARDOWN_CLASS)
 
         watcher_thread = threading.Thread(target=watchStdin, name="watchStdin")
         watcher_thread.daemon = True
@@ -153,6 +157,8 @@ class TestRunner(object):
         test_cls_instances: list of test class instances that were executed
                             or scheduled to be executed.
         log_severity: string, log severity level for the test logger.
+                      Currently, this parameter only affects how logs are displayed
+                      to the console, and is not recommended to be used.
     """
 
     def __init__(self, test_configs, run_list):
@@ -286,11 +292,14 @@ class TestRunner(object):
             ControllerError is raised if no corresponding config can be found,
             or if the controller module has already been registered.
         """
+        event = tfi.Begin('test_runner registerController',
+                          tfi.categories.FRAMEWORK_SETUP)
         logging.debug("cwd: %s", os.getcwd())
         logging.info("adb devices: %s", module.list_adb_devices())
         self.verifyControllerModule(module)
         module_ref_name = module.__name__.split('.')[-1]
         if module_ref_name in self.controller_registry:
+            event.End()
             raise signals.ControllerError(
                 ("Controller module %s has already "
                  "been registered. It can not be "
@@ -299,8 +308,9 @@ class TestRunner(object):
         create = module.create
         module_config_name = module.VTS_CONTROLLER_CONFIG_NAME
         if module_config_name not in self.testbed_configs:
-            raise signals.ControllerError(("No corresponding config found for"
-                                           " %s") % module_config_name)
+            msg = "No corresponding config found for %s" % module_config_name
+            event.Remove(msg)
+            raise signals.ControllerError(msg)
         try:
             # Make a deep copy of the config to pass to the controller module,
             # in case the controller module modifies the config internally.
@@ -318,17 +328,21 @@ class TestRunner(object):
                 objects = create(controller_config,
                                  self.testbed_configs["use_vts_agent"])
         except:
-            logging.exception(("Failed to initialize objects for controller "
-                               "%s, abort!"), module_config_name)
+            msg = "Failed to initialize objects for controller %s, abort!" % module_config_name
+            event.Remove(msg)
+            logging.error(msg)
             raise
         if not isinstance(objects, list):
-            raise signals.ControllerError(("Controller module %s did not"
-                        " return a list of objects, abort.") % module_ref_name)
+            msg = "Controller module %s did not return a list of objects, abort." % module_ref_name
+            event.Remove(msg)
+            raise signals.ControllerError(msg)
+
         self.controller_registry[module_ref_name] = objects
         logging.debug("Found %d objects for controller %s",
                       len(objects), module_config_name)
         destroy_func = module.destroy
         self.controller_destructors[module_ref_name] = destroy_func
+        event.End()
         return objects
 
     def unregisterControllers(self):
@@ -336,6 +350,8 @@ class TestRunner(object):
 
         This will be called at the end of each TestRunner.run call.
         """
+        event = tfi.Begin('test_runner unregisterControllers',
+                          tfi.categories.FRAMEWORK_TEARDOWN)
         for name, destroy in self.controller_destructors.items():
             try:
                 logging.debug("Destroying %s.", name)
@@ -345,6 +361,7 @@ class TestRunner(object):
                 logging.exception("Exception occurred destroying %s.", name)
         self.controller_registry = {}
         self.controller_destructors = {}
+        event.End()
 
     def parseTestConfig(self, test_configs):
         """Parses the test configuration and unpacks objects and parameters

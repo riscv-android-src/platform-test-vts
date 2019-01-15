@@ -15,44 +15,9 @@
 -->
 <configuration description="Base test plan for CTS based tests">
 
-    <include name="cts-base-common" />
+    <!-- include base cts -->
+    <include name="cts" />
 
-    <test class="com.android.compatibility.common.tradefed.testtype.suite.CompatibilityTestSuite">
-      <option name="run-suite-tag" value="cts" />
-    </test>
-
-    <!-- Explicitly include CTS components listed in CtsConfigLoadingTest.java -->
-    <option name="compatibility:module-metadata-include-filter" key="component" value="abuse" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="art" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="auth" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="auto" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="backup" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="bionic" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="bluetooth" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="camera" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="deqp" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="devtools" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="framework" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="graphics" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="inputmethod" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="libcore" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="location" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="media" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="metrics" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="misc" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="networking" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="neuralnetworks" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="renderscript" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="security" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="statsd" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="systems" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="sysui" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="telecom" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="tv" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="uitoolkit" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="vr" />
-    <option name="compatibility:module-metadata-include-filter" key="component" value="webview" />
-
-    <!-- Exclude vts-hal-adapter tests -->
-    <option name="compatibility:module-metadata-exclude-filter" key="plan" value="vts-hal-adapter" />
+    <!-- Filters to run a CTS-like command within VTS. For example: cts-on-gsi -->
+    <include name="cts-base-filters" />
 </configuration>

@@ -101,20 +101,22 @@ public class VtsDashboardUtil {
      *
      * @param message, DashboardPostMessage that keeps the result to upload.
      */
-    public void Upload(DashboardPostMessage message) {
+    public void Upload(DashboardPostMessage.Builder message) {
         String dashboardCurlCommand =
                 mConfigReader.GetVendorConfigVariable("dashboard_use_curl_command");
         Optional<String> dashboardCurlCommandOpt = Optional.of(dashboardCurlCommand);
         Boolean curlCommandCheck = Boolean.parseBoolean(dashboardCurlCommandOpt.orElse("false"));
-        message.setAccessToken(GetToken());
+        String token = GetToken();
+        if (token == null) {
+            return;
+        }
+        message.setAccessToken(token);
         String messageFilePath = "";
         try {
             messageFilePath = WriteToTempFile(
-                    Base64.getEncoder().encodeToString(message.toByteArray()).getBytes());
+                    Base64.getEncoder().encodeToString(message.build().toByteArray()).getBytes());
         } catch (IOException e) {
             CLog.e("Couldn't write a proto message to a temp file.");
-        } catch (NullPointerException e) {
-            CLog.e("Couldn't serialize proto message.");
         }
 
         if (Strings.isNullOrEmpty(messageFilePath)) {
@@ -141,7 +143,7 @@ public class VtsDashboardUtil {
             return true;
         } catch (IOException e) {
             CLog.e("Error occurred on uploading dashboard message file!");
-            CLog.e( e.getLocalizedMessage() );
+            CLog.e(e.getLocalizedMessage());
             return false;
         }
     }

@@ -86,3 +86,11 @@ vts_test_bin_packages += \
 # VTS DTBO verification tests
 vts_test_bin_packages += \
     ufdt_verify_overlay
+
+# System suspend unit tests.
+vts_test_bin_packages += \
+    SystemSuspendV1_0UnitTest
+
+# libpower tests
+vts_test_bin_packages += \
+    libpower_test

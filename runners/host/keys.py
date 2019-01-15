@@ -37,6 +37,9 @@ class ConfigKeys(object):
     KEY_EXCLUDE_FILTER = "exclude_filter"
     KEY_EXCLUDE_OVER_INCLUDE = "exclude_over_include"
 
+    # Keys for base test.
+    IKEY_MAX_RETRY_COUNT = "max_retry_count"
+
     # Keys for binary tests
     IKEY_BINARY_TEST_SOURCE = "binary_test_source"
     IKEY_BINARY_TEST_WORKING_DIRECTORY = "binary_test_working_directory"
@@ -91,6 +94,7 @@ class ConfigKeys(object):
     IKEY_PROFILING_TRACING_PATH = "profiling_trace_path"
     IKEY_TRACE_FILE_TOOL_NAME = "trace_file_tool_name"
     IKEY_SAVE_TRACE_FILE_REMOTE = "save_trace_file_remote"
+    IKEY_PROFILING_ARG_VALUE = "profiling_arg_value"
 
     # Keys for systrace (for hal tests)
     IKEY_ENABLE_SYSTRACE = "enable_systrace"
@@ -160,3 +164,6 @@ class ConfigKeys(object):
 
     # Mobly test related keys
     MOBLY_TEST_MODULE = "MOBLY_TEST_MODULE"
+
+    # Controller option keys
+    SHELL_DEFAULT_NOHUP = "shell_default_nohup"

@@ -105,6 +105,7 @@ class ProfilingFeature(feature_utils.Feature):
         keys.ConfigKeys.IKEY_TRACE_FILE_TOOL_NAME,
         keys.ConfigKeys.IKEY_SAVE_TRACE_FILE_REMOTE,
         keys.ConfigKeys.IKEY_ABI_BITNESS,
+        keys.ConfigKeys.IKEY_PROFILING_ARG_VALUE,
     ]
 
     def __init__(self, user_params, web=None):
@@ -152,10 +153,9 @@ class ProfilingFeature(feature_utils.Feature):
         if not host_profiling_trace_path:
             host_profiling_trace_path = LOCAL_PROFILING_TRACE_PATH
 
-        dut.shell.InvokeTerminal("profiling_shell")
         target_trace_file = path_utils.JoinTargetPath(
             TARGET_PROFILING_TRACE_PATH, "*.vts.trace")
-        results = dut.shell.profiling_shell.Execute("ls " + target_trace_file)
+        results = dut.shell.Execute("ls " + target_trace_file)
         asserts.assertTrue(results, "failed to find trace file")
         stdout_lines = results[const.STDOUT][0].split("\n")
         logging.debug("stdout: %s", stdout_lines)
@@ -213,6 +213,10 @@ class ProfilingFeature(feature_utils.Feature):
         shell.Execute("setprop hal.instrumentation.lib.path.64 " +
                       hal_instrumentation_lib_path_64)
 
+        if getattr(self, keys.ConfigKeys.IKEY_PROFILING_ARG_VALUE, False):
+            shell.Execute("setprop hal.instrumentation.profile.args true")
+        else:
+            shell.Execute("setprop hal.instrumentation.profile.args false")
         shell.Execute("setprop hal.instrumentation.enable true")
 
     def DisableVTSProfiling(self, shell):
@@ -222,6 +226,7 @@ class ProfilingFeature(feature_utils.Feature):
             shell: shell to control the testing device.
         """
         shell.Execute("setprop hal.instrumentation.lib.path \"\"")
+        shell.Execute("setprop hal.instrumentation.profile.args \"\"")
         shell.Execute("setprop hal.instrumentation.enable false")
 
     def _ParseTraceData(self, trace_file, measure_api_coverage):
@@ -253,6 +258,8 @@ class ProfilingFeature(feature_utils.Feature):
         results = cmd_utils.ExecuteShellCommand(trace_processor_cmd)
         if any(results[cmd_utils.EXIT_CODE]):
             logging.error("Fail to execute command: %s" % trace_processor_cmd)
+            logging.error("stdout: %s" % results[const.STDOUT])
+            logging.error("stderr: %s" % results[const.STDERR])
             return profiling_data
 
         stdout_lines = results[const.STDOUT][1].split("\n")

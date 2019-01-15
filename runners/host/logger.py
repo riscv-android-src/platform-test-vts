@@ -39,6 +39,8 @@ log_severity_map = {
     "DEBUG": logging.DEBUG,
 }
 
+# Directory name in the log path in which files will be included in TradeFed output
+PYTHON_CUSTOM_OUTPUT = 'custom_output_files'
 
 def _parse_logline_timestamp(t):
     """Parses a logline timestamp into a tuple.
@@ -148,7 +150,7 @@ def _initiateTestLogger(log_path, prefix=None, filename=None, log_severity="INFO
 
     log.setLevel(logging.DEBUG)
 
-    # Log info to stream
+    # Log into stream
     terminal_format = log_line_format
     if prefix:
         terminal_format = "[{}] {}".format(prefix, log_line_format)
