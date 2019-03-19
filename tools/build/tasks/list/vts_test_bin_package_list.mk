@@ -59,6 +59,7 @@ vts_test_bin_packages += \
 vts_test_bin_packages += \
     dt_early_mount_test \
     kernel_net_tests \
+    vts_kernel_loopconfig_test \
     vts_kernel_tun_test \
     vts_kernel_toolchain \
     vts_meminfo_test \
@@ -93,3 +94,7 @@ vts_test_bin_packages += \
 # libpower tests
 vts_test_bin_packages += \
     libpower_test
+
+# libprocessgroup JSON schema tests
+vts_test_bin_packages += \
+    vts_processgroup_validate_test \
