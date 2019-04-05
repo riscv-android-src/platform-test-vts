@@ -37,6 +37,11 @@
     <result_reporter class="com.android.compatibility.common.tradefed.result.VtsResultReporter" />
     <result_reporter class="com.android.tradefed.result.suite.SuiteResultReporter" />
 
+    <!-- Vts device info collect needs to be before Cts on otherwise build_fingerprint is already set -->
+    <target_preparer class="com.android.tradefed.targetprep.VtsDeviceInfoCollector">
+         <option name="disable-framework" value="false"/>
+    </target_preparer>
+
     <include name="cts-preconditions" />
     <option name="dynamic-config-pusher:dynamic-resource-name" value="vts-tradefed" />
     <include name="cts-system-checkers" />
@@ -70,9 +75,6 @@
 
     <!-- Include additional test metadata output. -->
     <template-include name="metadata-reporters" default="empty" />
-    <target_preparer class="com.android.tradefed.targetprep.VtsDeviceInfoCollector">
-         <option name="disable-framework" value="false"/>
-    </target_preparer>
 
     <option name="compatibility:primary-abi-only" value="true" />
 
