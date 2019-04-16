@@ -49,12 +49,19 @@ public class VtsDeviceInfoCollector implements ITargetPreparer {
         BUILD_KEYS.put("cts:build_product", "ro.product.name");
         BUILD_KEYS.put("cts:build_device", "ro.product.device");
         BUILD_KEYS.put("cts:build_board", "ro.product.board");
-        BUILD_KEYS.put("cts:build_manufacturer", "ro.product.manufacturer");
+        BUILD_KEYS.put("cts:build_manufacturer", "ro.product.vendor.manufacturer");
         BUILD_KEYS.put("cts:build_brand", "ro.product.brand");
-        BUILD_KEYS.put("cts:build_model", "ro.product.model");
+        BUILD_KEYS.put("cts:build_model", "ro.product.vendor.model");
         BUILD_KEYS.put("cts:build_type", "ro.build.type");
         BUILD_KEYS.put("cts:build_tags", "ro.build.tags");
+        /**
+         * build_fingerprint is used for certification
+         */
         BUILD_KEYS.put("cts:build_fingerprint", "ro.odm.build.fingerprint");
+        /**
+         * Unaltered is for retry.
+         */
+        BUILD_KEYS.put("cts:build_fingerprint_unaltered", "ro.build.fingerprint");
         BUILD_KEYS.put("cts:build_abi", "ro.product.cpu.abi");
         BUILD_KEYS.put("cts:build_abi2", "ro.product.cpu.abi2");
         BUILD_KEYS.put("cts:build_abis", "ro.product.cpu.abilist");

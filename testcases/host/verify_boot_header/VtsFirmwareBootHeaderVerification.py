@@ -28,7 +28,7 @@ from vts.runners.host import test_runner
 from vts.utils.python.android import api
 from vts.utils.python.file import target_file_utils
 
-BLOCK_DEV_PATH = "/dev/block/platform"  # path to platform block devices
+block_dev_path = "/dev/block/platform"  # path to platform block devices
 PROPERTY_SLOT_SUFFIX = "ro.boot.slot_suffix"  # indicates current slot suffix for A/B devices
 BOOT_HEADER_DTBO_SIZE_OFFSET = 1632  # offset of recovery dtbo size in boot header of version 1.
 
@@ -47,6 +47,7 @@ class VtsFirmwareBootHeaderVerificationTest(base_test.BaseTestClass):
         self.shell = self.dut.shell
         self.adb = self.dut.adb
         self.temp_dir = tempfile.mkdtemp()
+        self.launch_api_level = self.dut.getLaunchApiLevel()
         logging.info("Create %s", self.temp_dir)
         self.slot_suffix = self.dut.getProp(PROPERTY_SLOT_SUFFIX)
         if self.slot_suffix is None:
@@ -55,7 +56,14 @@ class VtsFirmwareBootHeaderVerificationTest(base_test.BaseTestClass):
 
     def setUp(self):
         """Checks if the the preconditions to run the test are met."""
-        asserts.skipIf("x86" in self.dut.cpu_abi, "Skipping test for x86 ABI")
+        if "x86" in self.dut.cpu_abi:
+            global block_dev_path
+            block_dev_path = "/dev/block"
+            acpio_idx_string = self.adb.shell(
+                "cat /proc/cmdline | "
+                "grep -o \"androidboot.acpio_idx=[^ ]*\" |"
+                "cut -d \"=\" -f 2 ").replace('\n','')
+            asserts.skipIf((len(acpio_idx_string) == 0), "Skipping test for x86 NON-ACPI ABI")
 
     def CheckImageHeader(self, boot_image, is_recovery=False):
         """Verifies the boot image header version, header size and recovery dtbo size.
@@ -69,9 +77,14 @@ class VtsFirmwareBootHeaderVerificationTest(base_test.BaseTestClass):
                 image_file.read(8)  # read boot magic
                 host_image_header_version = unpack("10I",
                                                    image_file.read(10 * 4))[8]
-                asserts.assertEqual(
-                    host_image_header_version, 1,
-                    "Device does not have boot image of version 1")
+                if (self.launch_api_level > api.PLATFORM_API_LEVEL_P):
+                    asserts.assertTrue(
+                        host_image_header_version >= 2,
+                        "Device must atleast have a boot image of version 2")
+                else:
+                    asserts.assertTrue(
+                        host_image_header_version >= 1,
+                        "Device must atleast have a boot image of version 1")
                 image_file.seek(BOOT_HEADER_DTBO_SIZE_OFFSET)
                 recovery_dtbo_size = unpack("I", image_file.read(4))[0]
                 image_file.read(8)  # ignore recovery dtbo load address
@@ -81,6 +94,10 @@ class VtsFirmwareBootHeaderVerificationTest(base_test.BaseTestClass):
                         "recovery partition for non-A/B devices must contain the recovery DTBO"
                     )
                 boot_header_size = unpack("I", image_file.read(4))[0]
+                if (host_image_header_version > 1):
+                    dtb_size = unpack("I", image_file.read(4))[0]
+                    asserts.assertNotEqual(dtb_size, 0, "Boot/recovery image must contain DTB")
+                    image_file.read(8)  # ignore DTB physical load address
                 expected_header_size = image_file.tell()
                 asserts.assertEqual(
                     boot_header_size, expected_header_size,
@@ -94,7 +111,7 @@ class VtsFirmwareBootHeaderVerificationTest(base_test.BaseTestClass):
         """Validates boot image header."""
         current_boot_partition = "boot" + str(self.slot_suffix)
         boot_path = target_file_utils.FindFiles(
-            self.shell, BLOCK_DEV_PATH, current_boot_partition, "-type l")
+            self.shell, block_dev_path, current_boot_partition, "-type l")
         logging.info("Boot path %s", boot_path)
         if not boot_path:
             asserts.fail("Unable to find path to boot image on device.")
@@ -106,7 +123,7 @@ class VtsFirmwareBootHeaderVerificationTest(base_test.BaseTestClass):
         """Validates recovery image header."""
         asserts.skipIf(self.slot_suffix,
                        "A/B devices do not have a separate recovery partition")
-        recovery_path = target_file_utils.FindFiles(self.shell, BLOCK_DEV_PATH,
+        recovery_path = target_file_utils.FindFiles(self.shell, block_dev_path,
                                                     "recovery", "-type l")
         logging.info("recovery path %s", recovery_path)
         if not recovery_path:
