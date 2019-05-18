@@ -254,6 +254,7 @@ vts_hal_test_bins := \
   VtsHalBroadcastradioV1_1TargetTest \
   VtsHalBroadcastradioV2_0TargetTest \
   VtsHalCameraProviderV2_4TargetTest \
+  VtsHalCameraServiceV2_0TargetTest \
   VtsHalCasV1_0TargetTest \
   VtsHalCasV1_1TargetTest \
   VtsHalConfigstoreV1_0TargetTest \
@@ -266,6 +267,7 @@ vts_hal_test_bins := \
   VtsHalGatekeeperV1_0TargetTest \
   VtsHalGnssV1_0TargetTest \
   VtsHalGnssV1_1TargetTest \
+  VtsHalGnssV2_0TargetTest \
   VtsHalGraphicsComposerV2_1TargetTest \
   VtsHalGraphicsComposerV2_2TargetTest \
   VtsHalGraphicsComposerV2_3TargetTest \
