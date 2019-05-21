@@ -16,7 +16,9 @@
 vts_test_bin_packages := \
     android.hardware.tests.msgq@1.0-service-benchmark \
     android.hardware.tests.msgq@1.0-service-test \
+    fiemap_writer_test \
     fmq_test \
+    gsi_boot_test \
     hidl_test \
     hidl_test_client \
     hidl_test_helper \
@@ -107,3 +109,9 @@ vts_test_bin_packages += \
     vts_halManifest_validate_test \
     vts_mediaCodecs_validate_test \
     vts_mediaProfiles_validate_test \
+    vts_defaultPermissions_validate_test \
+    vts_permission_validate_test \
+
+# AVB tests
+vts_test_bin_packages += \
+    VtsSecurityAvbTest
