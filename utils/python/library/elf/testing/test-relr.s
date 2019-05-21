@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2016 The Android Open Source Project
+# Copyright (C) 2019 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,13 @@
 # limitations under the License.
 #
 
-# List of variables to be clean before including Android.build.mk
-common_additional_dependencies :=
-common_cflags :=
-common_conlyflags :=
-common_cppflags :=
-common_c_includes :=
+.section .relr.dyn,"a",@0x6fffff00
+# Address entry
+.quad 0x300000
+
+# Bitmap entries where the least significant bits are 1
+.quad 0x1000000000000005
+.quad 0x0000000000000003
+
+# Another address entry
+.quad 0x400000
