@@ -21,6 +21,9 @@ vts_hal_driver_libs := \
   android.hardware.audio@4.0-vts.driver \
   android.hardware.audio.common@4.0-vts.driver \
   android.hardware.audio.effect@4.0-vts.driver \
+  android.hardware.audio@5.0-vts.driver \
+  android.hardware.audio.common@5.0-vts.driver \
+  android.hardware.audio.effect@5.0-vts.driver \
   android.hardware.authsecret@1.0-vts.driver \
   android.hardware.automotive.audiocontrol@1.0-vts.driver \
   android.hardware.automotive.evs@1.0-vts.driver \
@@ -49,6 +52,7 @@ vts_hal_driver_libs := \
   android.hardware.contexthub@1.0-vts.driver \
   android.hardware.drm@1.0-vts.driver \
   android.hardware.drm@1.1-vts.driver \
+  android.hardware.drm@1.2-vts.driver \
   android.hardware.dumpstate@1.0-vts.driver \
   android.hardware.gatekeeper@1.0-vts.driver \
   android.hardware.gnss@1.0-vts.driver \
@@ -142,6 +146,9 @@ vts_hal_profiler_libs := \
   android.hardware.audio@4.0-vts.profiler \
   android.hardware.audio.common@4.0-vts.profiler \
   android.hardware.audio.effect@4.0-vts.profiler \
+  android.hardware.audio@5.0-vts.profiler \
+  android.hardware.audio.common@5.0-vts.profiler \
+  android.hardware.audio.effect@5.0-vts.profiler \
   android.hardware.authsecret@1.0-vts.profiler \
   android.hardware.automotive.audiocontrol@1.0-vts.profiler \
   android.hardware.automotive.evs@1.0-vts.profiler \
@@ -272,6 +279,7 @@ vts_hal_test_bins := \
   VtsHalContexthubV1_0TargetTest \
   VtsHalDrmV1_0TargetTest \
   VtsHalDrmV1_1TargetTest \
+  VtsHalDrmV1_2TargetTest \
   VtsHalDumpstateV1_0TargetTest \
   VtsHalEvsV1_0TargetTest \
   VtsHalGatekeeperV1_0TargetTest \
