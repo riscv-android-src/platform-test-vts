@@ -1,5 +1,6 @@
-#
-# Copyright (C) 2018 The Android Open Source Project
+#!/bin/bash
+
+# Copyright (C) 2019 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,29 +13,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Test duplicating section names:
 
-.section test.dup,"",@note
-nop
+# A simple helper script that runs the VTS-Core harness unit tests
 
-# Test path name of program interpreter:
+VTS_CORE_DIR=`dirname $0`/../etc
 
-.section .interp,"a",@progbits
-.string "/lib64/ld-linux-x86-64.so.2"
-
-# Test android identifier section:
-
-.section .note.android.ident,"a",@note
-.balign 4
-# Size of NAME
-.long ANDROID_API - NAME
-# Size of ANDROID_API
-.long NOTE_ANDROID_IDENT_END - ANDROID_API
-# Type is NT_VERSION
-.long 1
-NAME:
-.ascii "Android\0"
-ANDROID_API:
-.long 28
-NOTE_ANDROID_IDENT_END:
+${VTS_CORE_DIR}/vts-core-tradefed run singleCommand host -n \
+  --console-result-reporter:suppress-passed-tests \
+  --class com.android.compatibility.common.tradefed.UnitTests \
+  --class com.android.compatibility.common.util.HostUnitTests \
+  --class com.android.compatibility.common.util.UnitTests \
+  --class com.android.compatibility.tradefed.VtsCoreTradefedTest
+  "$@"
