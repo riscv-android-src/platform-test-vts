@@ -291,4 +291,7 @@
 
     <!-- b/111167329: CtsCameraTestCases failure -->
     <option name="compatibility:exclude-filter" value="CtsCameraTestCases android.hardware.camera2.cts.SurfaceViewPreviewTest#testSurfaceSet"/>
+
+    <!-- b/135588722: CtsUsesLibraryHostTestCases (10_r1 waiver) -->
+    <option name="compatibility:exclude-filter" value="CtsUsesLibraryHostTestCases android.classloaders.cts.UsesLibraryHostTest#testMissingLibrary_full"/>
 </configuration>
