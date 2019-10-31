@@ -294,4 +294,6 @@
 
     <!-- b/135588722: CtsUsesLibraryHostTestCases (10_r1 waiver) -->
     <option name="compatibility:exclude-filter" value="CtsUsesLibraryHostTestCases android.classloaders.cts.UsesLibraryHostTest#testMissingLibrary_full"/>
+    <option name="compatibility:exclude-filter" value="CtsUsesLibraryHostTestCases android.classloaders.cts.UsesLibraryHostTest#testUsesLibrary_full"/>
+    <option name="compatibility:exclude-filter" value="CtsCompilationTestCases android.compilation.cts.AdbRootDependentCompilationTest"/>
 </configuration>
