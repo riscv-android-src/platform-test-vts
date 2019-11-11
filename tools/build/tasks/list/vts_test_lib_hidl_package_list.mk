@@ -21,6 +21,12 @@ vts_hal_driver_libs := \
   android.hardware.audio@4.0-vts.driver \
   android.hardware.audio.common@4.0-vts.driver \
   android.hardware.audio.effect@4.0-vts.driver \
+  android.hardware.audio@5.0-vts.driver \
+  android.hardware.audio.common@5.0-vts.driver \
+  android.hardware.audio.effect@5.0-vts.driver \
+  android.hardware.audio@6.0-vts.driver \
+  android.hardware.audio.common@6.0-vts.driver \
+  android.hardware.audio.effect@6.0-vts.driver \
   android.hardware.authsecret@1.0-vts.driver \
   android.hardware.automotive.audiocontrol@1.0-vts.driver \
   android.hardware.automotive.evs@1.0-vts.driver \
@@ -42,6 +48,7 @@ vts_hal_driver_libs := \
   android.hardware.camera.provider@2.4-vts.driver \
   android.hardware.cas@1.0-vts.driver \
   android.hardware.cas@1.1-vts.driver \
+  android.hardware.cas@1.2-vts.driver \
   android.hardware.cas.native@1.0-vts.driver \
   android.hardware.configstore@1.0-vts.driver \
   android.hardware.configstore@1.2-vts.driver \
@@ -143,6 +150,12 @@ vts_hal_profiler_libs := \
   android.hardware.audio@4.0-vts.profiler \
   android.hardware.audio.common@4.0-vts.profiler \
   android.hardware.audio.effect@4.0-vts.profiler \
+  android.hardware.audio@5.0-vts.profiler \
+  android.hardware.audio.common@5.0-vts.profiler \
+  android.hardware.audio.effect@5.0-vts.profiler \
+  android.hardware.audio@6.0-vts.profiler \
+  android.hardware.audio.common@6.0-vts.profiler \
+  android.hardware.audio.effect@6.0-vts.profiler \
   android.hardware.authsecret@1.0-vts.profiler \
   android.hardware.automotive.audiocontrol@1.0-vts.profiler \
   android.hardware.automotive.evs@1.0-vts.profiler \
@@ -164,6 +177,7 @@ vts_hal_profiler_libs := \
   android.hardware.camera.provider@2.4-vts.profiler \
   android.hardware.cas@1.0-vts.profiler \
   android.hardware.cas@1.1-vts.profiler \
+  android.hardware.cas@1.2-vts.profiler \
   android.hardware.cas.native@1.0-vts.profiler \
   android.hardware.configstore@1.0-vts.profiler \
   android.hardware.configstore@1.2-vts.profiler \
@@ -255,9 +269,11 @@ vts_hal_test_bins := \
   VtsHalAudioV2_0TargetTest \
   VtsHalAudioV4_0TargetTest \
   VtsHalAudioV5_0TargetTest \
+  VtsHalAudioV6_0TargetTest \
   VtsHalAudioEffectV2_0TargetTest \
   VtsHalAudioEffectV4_0TargetTest \
   VtsHalAudioEffectV5_0TargetTest \
+  VtsHalAudioEffectV6_0TargetTest \
   VtsHalAuthSecretV1_0TargetTest \
   VtsHalBiometricsFaceV1_0TargetTest \
   VtsHalBiometricsFingerprintV2_1TargetTest \
@@ -270,6 +286,7 @@ vts_hal_test_bins := \
   VtsHalCameraServiceV2_0TargetTest \
   VtsHalCasV1_0TargetTest \
   VtsHalCasV1_1TargetTest \
+  VtsHalCasV1_2TargetTest \
   VtsHalConfigstoreV1_0TargetTest \
   VtsHalContexthubV1_0TargetTest \
   VtsHalDrmV1_0TargetTest \
