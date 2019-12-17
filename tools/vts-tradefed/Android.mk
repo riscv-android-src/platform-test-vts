@@ -33,6 +33,9 @@ LOCAL_STATIC_JAVA_LIBRARIES += \
     google-api-java-client-min-repackaged \
     cts-tradefed-harness
 
+LOCAL_JAVA_LIBRARIES += \
+    vts-core-tradefed-harness
+
 LOCAL_JAR_MANIFEST := MANIFEST.mf
 
 LOCAL_MODULE := vts-tradefed
