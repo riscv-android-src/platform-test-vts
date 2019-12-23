@@ -39,4 +39,8 @@
 
   <!-- Tests for libraries not on GSI -->
   <option name="compatibility:exclude-filter" value="VtsHalBufferHubV1_0Target" />
+
+  <!-- b/145112387: exclude VTS 10_r2 -->
+  <option name="compatibility:exclude-filter" value="VtsHalDrmV1_2Target VtsHalDrmV1_2Target#DrmHalTestVendor/DrmHalTest.OfflineLicenseTest/0_64bit" />
+  <option name="compatibility:exclude-filter" value="VtsHalDrmV1_2Target VtsHalDrmV1_2Target#DrmHalTestVendor/DrmHalTest.OfflineLicenseTest/0_32bit" />
 </configuration>
