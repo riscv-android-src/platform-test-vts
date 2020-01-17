@@ -475,7 +475,8 @@ public class VtsPythonVirtualenvPreparer implements IMultiTargetPreparer {
 
             if (c.getStatus() != CommandStatus.SUCCESS) {
                 String message_lower = (c.getStdout() + c.getStderr()).toLowerCase();
-                if (message_lower.contains("errno 26")
+                if (message_lower.contains("errno 17") // File exists
+                        || message_lower.contains("errno 26")
                         || message_lower.contains("text file busy")) {
                     // Race condition, retry.
                     CLog.d("detected the virtualenv path is being created by other process.");
