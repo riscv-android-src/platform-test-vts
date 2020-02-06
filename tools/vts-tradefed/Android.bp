@@ -1,5 +1,4 @@
-//
-// Copyright (C) 2018 The Android Open Source Project
+// Copyright (C) 2016 The Android Open Source Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,19 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 
-cc_test {
-    name: "vts_selftest_flaky_test",
-    srcs: ["vts_selftest_flaky_test.cpp"],
-    cflags: [
-        "-Wall",
-        "-Werror",
-        "-O0",
-        "-g",
+tradefed_binary_host {
+    name: "vts-tradefed",
+    wrapper: "etc/vts-tradefed",
+    short_name: "VTS",
+    full_name: "Vendor Test Suite",
+    version: "10_r1",
+    static_libs: [
+        "libvts_protos_host",
+        "gson-prebuilt-jar",
+        "google-api-java-client-min-repackaged",
+        "cts-tradefed-harness",
+        "vts-tradefed-harness",
     ],
-}
-
-vts_config {
-    name: "VtsSelfTestFlakyTest",
+    libs: ["vts-core-tradefed-harness"],
+    manifest: "MANIFEST.mf",
+    java_resource_dirs: ["res"],
 }
