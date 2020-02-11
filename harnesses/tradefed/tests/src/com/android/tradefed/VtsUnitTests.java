@@ -18,8 +18,8 @@ package com.android.tradefed;
 import com.android.compatibility.common.tradefed.config.ConfigurationFactoryTest;
 import com.android.tradefed.device.metric.VtsCoverageCollectorTest;
 import com.android.tradefed.device.metric.VtsHalTraceCollectorTest;
-import com.android.tradefed.presubmit.VtsConfigLoadingTest;
 import com.android.tradefed.module.VtsHalAdapterModuleControllerTest;
+import com.android.tradefed.presubmit.VtsConfigLoadingTest;
 import com.android.tradefed.targetprep.VtsCoveragePreparerTest;
 import com.android.tradefed.targetprep.VtsDevicePreparerTest;
 import com.android.tradefed.targetprep.VtsHalAdapterPreparerTest;
@@ -33,7 +33,6 @@ import com.android.tradefed.util.CmdUtilTest;
 import com.android.tradefed.util.OutputUtilTest;
 import com.android.tradefed.util.ProcessHelperTest;
 import com.android.tradefed.util.VtsPythonRunnerHelperTest;
-
 import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
 import org.junit.runners.Suite.SuiteClasses;

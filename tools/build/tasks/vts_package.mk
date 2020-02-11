@@ -44,6 +44,9 @@ VTS_TESTCASES_OUT := $(VTS_OUT_ROOT)/android-vts/testcases
 test_suite_name := vts
 test_suite_tradefed := vts-tradefed
 test_suite_readme := test/vts/README.md
+# Package vts-core libraries.
+test_suite_tools += $(HOST_OUT_JAVA_LIBRARIES)/vts-core-tradefed-harness.jar \
+    $(HOST_OUT_JAVA_LIBRARIES)/vts-core-tradefed-tests.jar
 
 include $(BUILD_SYSTEM)/tasks/tools/compatibility.mk
 
@@ -151,19 +154,12 @@ vndk_test_res_copy_pairs := \
   $(foreach vndk_ver,$(PRODUCT_EXTRA_VNDK_VERSIONS),build/make/target/product/gsi/$(vndk_ver).txt:$(VTS_TESTCASES_OUT)/vts/testcases/vndk/golden/$(vndk_ver)/vndk-lib-list.txt) \
   $(foreach vndk_ver,$(PRODUCT_EXTRA_VNDK_VERSIONS),development/vndk/tools/definition-tool/datasets/vndk-lib-extra-list-$(vndk_ver).txt:$(VTS_TESTCASES_OUT)/vts/testcases/vndk/golden/$(vndk_ver)/vndk-lib-extra-list.txt) \
 
-kernel_rootdir_test_rc_files := \
-  $(call find-files-in-subdirs,system/core/rootdir,"*.rc" -and -type f,.) \
-
-kernel_rootdir_test_rc_copy_pairs := \
-  $(foreach f,$(kernel_rootdir_test_rc_files),\
-    system/core/rootdir/$(f):$(VTS_TESTCASES_OUT)/vts/testcases/kernel/api/rootdir/init_rc_files/$(f)) \
-
 system_property_compatibility_test_res_copy_pairs := \
   system/sepolicy/public/property_contexts:$(VTS_TESTCASES_OUT)/vts/testcases/security/system_property/data/property_contexts
 
 # For VtsSecurityAvb
 gsi_key_copy_pairs := \
-  system/core/rootdir/avb/q-gsi.avbpubkey:$(VTS_TESTCASES_OUT)/DATA/avb/q-gsi.avbpubkey
+  system/core/rootdir/avb/r-gsi.avbpubkey:$(VTS_TESTCASES_OUT)/DATA/avb/r-gsi.avbpubkey
 
 $(VTS_TESTCASES_OUT)/vts/testcases/vndk/golden/platform_vndk_version.txt:
 	@echo -n $(PLATFORM_VNDK_VERSION) > $@
@@ -216,7 +212,6 @@ vts_copy_pairs := \
   $(call copy-many-files,$(performance_test_res_copy_pairs)) \
   $(call copy-many-files,$(audio_test_res_copy_pairs)) \
   $(call copy-many-files,$(vndk_test_res_copy_pairs)) \
-  $(call copy-many-files,$(kernel_rootdir_test_rc_copy_pairs)) \
   $(call copy-many-files,$(system_property_compatibility_test_res_copy_pairs)) \
   $(call copy-many-files,$(xsd_config_files)) \
   $(call copy-many-files,$(gsi_key_copy_pairs)) \

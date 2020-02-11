@@ -21,6 +21,12 @@ vts_hal_driver_libs := \
   android.hardware.audio@4.0-vts.driver \
   android.hardware.audio.common@4.0-vts.driver \
   android.hardware.audio.effect@4.0-vts.driver \
+  android.hardware.audio@5.0-vts.driver \
+  android.hardware.audio.common@5.0-vts.driver \
+  android.hardware.audio.effect@5.0-vts.driver \
+  android.hardware.audio@6.0-vts.driver \
+  android.hardware.audio.common@6.0-vts.driver \
+  android.hardware.audio.effect@6.0-vts.driver \
   android.hardware.authsecret@1.0-vts.driver \
   android.hardware.automotive.audiocontrol@1.0-vts.driver \
   android.hardware.automotive.evs@1.0-vts.driver \
@@ -42,6 +48,7 @@ vts_hal_driver_libs := \
   android.hardware.camera.provider@2.4-vts.driver \
   android.hardware.cas@1.0-vts.driver \
   android.hardware.cas@1.1-vts.driver \
+  android.hardware.cas@1.2-vts.driver \
   android.hardware.cas.native@1.0-vts.driver \
   android.hardware.configstore@1.0-vts.driver \
   android.hardware.configstore@1.2-vts.driver \
@@ -49,6 +56,7 @@ vts_hal_driver_libs := \
   android.hardware.contexthub@1.0-vts.driver \
   android.hardware.drm@1.0-vts.driver \
   android.hardware.drm@1.1-vts.driver \
+  android.hardware.drm@1.2-vts.driver \
   android.hardware.dumpstate@1.0-vts.driver \
   android.hardware.gatekeeper@1.0-vts.driver \
   android.hardware.gnss@1.0-vts.driver \
@@ -111,6 +119,7 @@ vts_hal_driver_libs := \
   android.hardware.thermal@2.0-vts.driver \
   android.hardware.tv.cec@1.0-vts.driver \
   android.hardware.tv.input@1.0-vts.driver \
+  android.hardware.tv.tuner@1.0-vts.driver \
   android.hardware.usb@1.0-vts.driver \
   android.hardware.usb@1.1-vts.driver \
   android.hardware.usb.gadget@1.0-vts.driver \
@@ -142,6 +151,12 @@ vts_hal_profiler_libs := \
   android.hardware.audio@4.0-vts.profiler \
   android.hardware.audio.common@4.0-vts.profiler \
   android.hardware.audio.effect@4.0-vts.profiler \
+  android.hardware.audio@5.0-vts.profiler \
+  android.hardware.audio.common@5.0-vts.profiler \
+  android.hardware.audio.effect@5.0-vts.profiler \
+  android.hardware.audio@6.0-vts.profiler \
+  android.hardware.audio.common@6.0-vts.profiler \
+  android.hardware.audio.effect@6.0-vts.profiler \
   android.hardware.authsecret@1.0-vts.profiler \
   android.hardware.automotive.audiocontrol@1.0-vts.profiler \
   android.hardware.automotive.evs@1.0-vts.profiler \
@@ -163,6 +178,7 @@ vts_hal_profiler_libs := \
   android.hardware.camera.provider@2.4-vts.profiler \
   android.hardware.cas@1.0-vts.profiler \
   android.hardware.cas@1.1-vts.profiler \
+  android.hardware.cas@1.2-vts.profiler \
   android.hardware.cas.native@1.0-vts.profiler \
   android.hardware.configstore@1.0-vts.profiler \
   android.hardware.configstore@1.2-vts.profiler \
@@ -226,6 +242,7 @@ vts_hal_profiler_libs := \
   android.hardware.thermal@2.0-vts.profiler \
   android.hardware.tv.cec@1.0-vts.profiler \
   android.hardware.tv.input@1.0-vts.profiler \
+  android.hardware.tv.tuner@1.0-vts.profiler \
   android.hardware.usb@1.0-vts.profiler \
   android.hardware.usb@1.1-vts.profiler \
   android.hardware.usb.gadget@1.0-vts.profiler \
@@ -233,6 +250,7 @@ vts_hal_profiler_libs := \
   android.hardware.vibrator@1.1-vts.profiler \
   android.hardware.vibrator@1.2-vts.profiler \
   android.hardware.vibrator@1.3-vts.profiler \
+  android.hardware.vibrator@1.4-vts.profiler \
   android.hardware.vr@1.0-vts.profiler \
   android.hardware.weaver@1.0-vts.profiler \
   android.hardware.wifi@1.0-vts.profiler \
@@ -253,9 +271,12 @@ vts_hal_test_bins := \
   VtsHalAudioV2_0TargetTest \
   VtsHalAudioV4_0TargetTest \
   VtsHalAudioV5_0TargetTest \
+  VtsHalAudioV6_0TargetTest \
   VtsHalAudioEffectV2_0TargetTest \
   VtsHalAudioEffectV4_0TargetTest \
   VtsHalAudioEffectV5_0TargetTest \
+  VtsHalAudioEffectV6_0TargetTest \
+  VtsHalAudioPolicyV1_0TargetTest \
   VtsHalAuthSecretV1_0TargetTest \
   VtsHalBiometricsFaceV1_0TargetTest \
   VtsHalBiometricsFingerprintV2_1TargetTest \
@@ -268,10 +289,12 @@ vts_hal_test_bins := \
   VtsHalCameraServiceV2_0TargetTest \
   VtsHalCasV1_0TargetTest \
   VtsHalCasV1_1TargetTest \
+  VtsHalCasV1_2TargetTest \
   VtsHalConfigstoreV1_0TargetTest \
   VtsHalContexthubV1_0TargetTest \
   VtsHalDrmV1_0TargetTest \
   VtsHalDrmV1_1TargetTest \
+  VtsHalDrmV1_2TargetTest \
   VtsHalDumpstateV1_0TargetTest \
   VtsHalEvsV1_0TargetTest \
   VtsHalGatekeeperV1_0TargetTest \
@@ -309,6 +332,8 @@ vts_hal_test_bins := \
   VtsHalNeuralnetworksV1_1TargetTest \
   VtsHalNeuralnetworksV1_2TargetTest \
   VtsHalNeuralnetworksV1_2Benchmark \
+  VtsHalNeuralnetworksV1_3TargetTest \
+  VtsHalNeuralnetworksV1_3Benchmark \
   VtsHalNfcV1_0TargetTest \
   VtsHalNfcV1_1TargetTest \
   VtsHalNfcV1_2TargetTest \
@@ -343,12 +368,14 @@ vts_hal_test_bins := \
   thermal_hidl_stress_test \
   VtsHalBufferHubV1_0TargetTest \
   VtsHalTvInputV1_0TargetTest \
+  VtsHalTvTunerV1_0TargetTest \
   VtsHalUsbV1_0TargetTest \
   VtsHalUsbV1_1TargetTest \
   VtsHalVibratorV1_0TargetTest \
   VtsHalVibratorV1_1TargetTest \
   VtsHalVibratorV1_2TargetTest \
   VtsHalVibratorV1_3TargetTest \
+  VtsHalVibratorV1_4TargetTest \
   VtsHalVrV1_0TargetTest \
   VtsHalWeaverV1_0TargetTest \
   VtsHalWifiHostapdV1_0TargetTest \
