@@ -63,11 +63,11 @@ public class VtsMultiSimPreparer extends BaseTargetPreparer implements ITargetCl
 
     private int getNumSims() throws DeviceNotAvailableException {
         String config = executeCmd("telecom get-sim-config");
-        if ("SSSS".equals(config) || config.isEmpty()) {
+        if ("SSSS".equalsIgnoreCase(config) || config.isEmpty()) {
             return 1;
-        } else if ("DSDS".equals(config)) {
+        } else if ("DSDS".equalsIgnoreCase(config)) {
             return 2;
-        } else if ("TSTS".equals(config)) {
+        } else if ("TSTS".equalsIgnoreCase(config)) {
             return 3;
         }
         LogUtil.CLog.w("Could not get SIM config, assuming 1 sim");
