@@ -22,7 +22,7 @@
 
     <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
         <option name="cleanup" value="true" />
-        <option name="push-file" key="kernel_net_tests" value="/data/local/tmp/kernel_net_tests" />
+        <option name="push-file" key="vts_kernel_net_tests" value="/data/local/tmp/vts_kernel_net_tests" />
     </target_preparer>
 
     <target_preparer class="com.android.tradefed.targetprep.DeviceSetup">
