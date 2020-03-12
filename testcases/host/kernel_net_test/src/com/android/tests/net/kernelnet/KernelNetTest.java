@@ -34,10 +34,10 @@ import org.junit.runner.RunWith;
 @RunWith(DeviceJUnit4ClassRunner.class)
 public class KernelNetTest extends BaseHostJUnit4Test {
     private String mTargetBinPath;
-    private static final String DEVICE_BIN_ROOT = "/data/local/tmp/kernel_net_tests";
+    private static final String DEVICE_BIN_ROOT = "/data/local/tmp/vts_kernel_net_tests";
     /** The time in ms to wait for a command to complete. */
     private static final long CMD_TIMEOUT = 5 * 60 * 1000L;
-    private static final String KERNEL_NET_TESTS = "kernel_net_tests";
+    private static final String KERNEL_NET_TESTS = "vts_kernel_net_tests";
 
     /**
      * Android kernel unit test.

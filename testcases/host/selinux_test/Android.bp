@@ -13,16 +13,16 @@
 // limitations under the License.
 
 java_test_host {
-    name: "KernelNetTest",
+    name: "KernelSelinuxFileApiTest",
     libs: [
         "compatibility-tradefed",
         "tradefed",
         "tradefed-common-util",
+        "vts-core-tradefed-harness"
     ],
     srcs: ["src/**/*.java"],
     test_suites: [
         "general-tests",
         "vts-core",
     ],
-    target_required: ["vts_kernel_net_tests"],
 }
