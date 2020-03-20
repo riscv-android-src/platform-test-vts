@@ -13,6 +13,9 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+# TODO(b/147454897): Keep the logic in sync with
+#                    test/vts-testcase/vndk/utils.py until this file is
+#                    removed.
 from builtins import str
 from builtins import open
 
@@ -188,6 +191,16 @@ def list_fastboot_devices():
     """
     out = fastboot.FastbootProxy().devices()
     return _parse_device_list(out, "fastboot")
+
+
+def list_unauthorized_devices():
+    """List all unauthorized devices connected to the host and detected by adb.
+
+    Returns:
+        A list of unauthorized device serials. Empty if there's none.
+    """
+    out = adb.AdbProxy().devices()
+    return _parse_device_list(out, "unauthorized")
 
 
 def get_instances(serials):
@@ -450,6 +463,16 @@ class AndroidDevice(object):
     def isBootloaderMode(self):
         """True if the device is in bootloader mode."""
         return self.serial in list_fastboot_devices()
+
+    @property
+    def isTcpFastbootdMode(self):
+        """True if the device is in tcp fastbootd mode."""
+        if self.serial in list_unauthorized_devices():
+            if self.fastboot.isFastbootOverTcp(self.serial):
+                out = self.fastboot.getvar("is-userspace").strip()
+                if ("is-userspace: yes") in out:
+                    return True
+        return False
 
     @property
     def isAdbRoot(self):
@@ -1110,6 +1133,10 @@ class AndroidDevice(object):
             self.fastboot.reboot()
             return
 
+        if self.isTcpFastbootdMode:
+            self.fastboot.reboot()
+            return
+
         if restart_services:
             has_adb_log = self.isAdbLogcatOn
             has_vts_agent = True if self.vts_agent_process else False
@@ -1185,6 +1212,9 @@ class AndroidDevice(object):
                     "Device is in adb devices, but is not responding!")
             elif self.isBootloaderMode:
                 self.log.info("Device is in bootloader/fastbootd mode")
+                return True
+            elif self.isTcpFastbootdMode:
+                self.log.info("Device is in tcp fastbootd mode")
                 return True
             else:
                 self.log.error("Device is not in adb devices!")

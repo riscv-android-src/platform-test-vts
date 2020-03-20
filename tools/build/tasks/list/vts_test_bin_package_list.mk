@@ -44,6 +44,7 @@ vts_test_bin_packages := \
     libcutils_test_static \
     vts_test_binary_qtaguid_module \
     vts_test_binary_bpf_module \
+    ion-unit-tests \
 
 # Proto fuzzer executable
 vts_test_bin_packages += \
@@ -63,6 +64,7 @@ vts_test_bin_packages += \
 vts_test_bin_packages += \
     dt_early_mount_test \
     kernel_net_tests \
+    vts_kernel_encryption_test \
     vts_kernel_loopconfig_test \
     vts_kernel_tun_test \
     vts_kernel_toolchain \
