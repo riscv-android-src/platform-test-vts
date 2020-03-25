@@ -40,7 +40,10 @@ cc_test {
     ],
 
     // Tag this module as a vts test artifact
-    test_suites: ["vts"],
+    test_suites: [
+        "vts",
+        "vts10",
+    ],
 
     cflags: [
         "-Wall",
