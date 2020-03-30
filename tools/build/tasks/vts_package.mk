@@ -52,7 +52,12 @@ include $(BUILD_SYSTEM)/tasks/tools/compatibility.mk
 
 .PHONY: vts
 vts: $(compatibility_zip) vtslab adb
-$(call dist-for-goals, vts, $(compatibility_zip))
+
+# Add a phony target to preparer vts to be renamed to vts10
+.PHONY: vts10
+vts10: vts
+
+$(call dist-for-goals, vts vts10, $(compatibility_zip))
 
 # Packaging rule for android-vts.zip's testcases dir (DATA subdir).
 target_native_modules := \
