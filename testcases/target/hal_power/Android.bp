@@ -39,9 +39,8 @@ cc_test {
         "libgtest",
     ],
 
-    // Tag this module as a vts test artifact
+    // Tag this module as a vts10 test artifact
     test_suites: [
-        "vts",
         "vts10",
     ],
 
