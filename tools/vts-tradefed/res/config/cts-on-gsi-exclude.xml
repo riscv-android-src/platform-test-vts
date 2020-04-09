@@ -300,4 +300,7 @@
     <!-- b/145371681: CtsContentSuggestionsTestCases and CtsAppPredictionServiceTestCases (10_r2 waiver) -->
     <option name="compatibility:exclude-filter" value="CtsAppPredictionServiceTestCases" />
     <option name="compatibility:exclude-filter" value="CtsContentSuggestionsTestCases" />
+
+    <!-- b/143513519: CtsCameraTestCases (10_r3 waiver) -->
+    <option name="compatibility:exclude-filter" value="CtsCameraTestCases android.camera.cts.HeifWriterTest#testHeif"/>
 </configuration>
