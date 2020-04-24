@@ -303,4 +303,7 @@
 
     <!-- b/143513519: CtsCameraTestCases (10_r3 waiver) -->
     <option name="compatibility:exclude-filter" value="CtsCameraTestCases android.camera.cts.HeifWriterTest#testHeif"/>
+
+    <!-- b/153032202: CtsSystemUiTestCases (10_r3 waiver) -->
+    <option name="compatibility:exclude-filter" value="CtsSystemUiTestCases android.systemui.cts.WindowInsetsBehaviorTests#swipeOutsideLimit_systemUiVisible_allEventsCanceled"/>
 </configuration>
