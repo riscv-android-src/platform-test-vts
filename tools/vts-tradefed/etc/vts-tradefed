@@ -45,9 +45,9 @@ checkPath adb
 checkPath java
 
 # check java version
-JAVA_VERSION=$(java -version 2>&1 | grep 'version [ "]\(1\.8\|9\|11\).*[ "]' | head -n 1)
+JAVA_VERSION=$(java -version 2>&1 | head -n 1 | grep 'version [ "]\(1\.8\|9\).*[ "]')
 if [ "${JAVA_VERSION}" == "" ]; then
-    echo "Wrong java version. 1.8, 9, or 11 is required."
+    echo "Wrong java version. 1.8 or 9 is required."
     exit
 fi
 
@@ -184,4 +184,4 @@ else
     VTS_TESTCASES=${VTS_ROOT}/android-${VTF_BUILD_TARGET_NAME}/${VENDOR}/testcases/
 fi
 
-cd ${VTS_TESTCASES}; VTS_TESTCASES=${VTS_TESTCASES} java -Xmx4096m $RDBG_FLAG -cp ${JAR_PATH} -DVTS_ROOT=${VTS_ROOT} com.android.compatibility.common.tradefed.command.CompatibilityConsole "${ARGS[@]}"
+cd ${VTS_TESTCASES}; VTS_TESTCASES=${VTS_TESTCASES} java -Xmx2048m $RDBG_FLAG -cp ${JAR_PATH} -DVTS_ROOT=${VTS_ROOT} com.android.compatibility.common.tradefed.command.CompatibilityConsole "${ARGS[@]}"

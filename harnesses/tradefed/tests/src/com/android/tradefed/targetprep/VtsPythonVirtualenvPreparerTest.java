@@ -18,24 +18,22 @@ package com.android.tradefed.targetprep;
 
 import static org.easymock.EasyMock.anyLong;
 import static org.easymock.EasyMock.expect;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import com.android.tradefed.build.BuildInfo;
 import com.android.tradefed.build.IBuildInfo;
+import com.android.tradefed.log.LogUtil.CLog;
 import com.android.tradefed.util.CommandResult;
 import com.android.tradefed.util.CommandStatus;
 import com.android.tradefed.util.FileUtil;
 import com.android.tradefed.util.IRunUtil;
-
 import org.easymock.EasyMock;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 import org.mockito.Mock;
-
 import java.io.File;
 import java.io.IOException;
 
@@ -45,20 +43,112 @@ import java.io.IOException;
  */
 @RunWith(JUnit4.class)
 public class VtsPythonVirtualenvPreparerTest {
-    private VtsPythonVirtualenvPreparer mPreparer;
+    private MockPythonVirtualenvPreparer mPreparer;
     private IRunUtil mMockRunUtil;
+    private MockFile mFile;
     @Mock private IBuildInfo mBuildInfo;
+
+    class MockFile extends File {
+        public boolean createNewFileSuccess = true;
+
+        /**
+         * @param name
+         */
+        public MockFile(String name) {
+            super(name);
+        }
+
+        @Override
+        public boolean createNewFile() throws IOException {
+            if (!createNewFileSuccess) {
+                throw new IOException();
+            };
+
+            return true;
+        }
+    }
+
+    class MockPythonVirtualenvPreparer extends VtsPythonVirtualenvPreparer {
+        public int mock_createVirtualenv = -1;
+        public int mock_checkHostReuseVirtualenv = -1;
+        public int mock_checkTestPlanLevelVirtualenv = -1;
+        public int mock_createVirtualenv_waitForOtherProcessToCreateVirtualEnv = -1;
+
+        @Override
+        protected IRunUtil getRunUtil() {
+            return mMockRunUtil;
+        }
+
+        @Override
+        protected File getVirtualenvCreationMarkFile() {
+            return mFile;
+        }
+
+        @Override
+        protected boolean createVirtualenv() throws IOException {
+            switch (mock_createVirtualenv) {
+                case 0:
+                    return false;
+                case 1:
+                    return true;
+                case 2:
+                    throw new IOException("");
+                default:
+                    return super.createVirtualenv();
+            }
+        }
+
+        @Override
+        protected boolean checkHostReuseVirtualenv(IBuildInfo buildInfo) throws IOException {
+            switch (mock_checkHostReuseVirtualenv) {
+                case 0:
+                    return false;
+                case 1:
+                    return true;
+                case 2:
+                    throw new IOException("");
+                default:
+                    return super.checkHostReuseVirtualenv(buildInfo);
+            }
+        }
+
+        @SuppressWarnings("deprecation")
+        @Override
+        protected boolean checkTestPlanLevelVirtualenv(IBuildInfo buildInfo)
+                throws TargetSetupError {
+            switch (mock_checkTestPlanLevelVirtualenv) {
+                case 0:
+                    return false;
+                case 1:
+                    return true;
+                case 2:
+                    throw new TargetSetupError("");
+                default:
+                    return super.checkTestPlanLevelVirtualenv(buildInfo);
+            }
+        }
+
+        @SuppressWarnings("deprecation")
+        @Override
+        protected boolean createVirtualenv_waitForOtherProcessToCreateVirtualEnv() {
+            switch (mock_createVirtualenv_waitForOtherProcessToCreateVirtualEnv) {
+                case 0:
+                    return false;
+                case 1:
+                    return true;
+                default:
+                    return super.createVirtualenv_waitForOtherProcessToCreateVirtualEnv();
+            }
+        }
+    }
 
     @Before
     public void setUp() throws Exception {
         mMockRunUtil = EasyMock.createMock(IRunUtil.class);
+        mFile = new MockFile("");
 
-        mPreparer = new VtsPythonVirtualenvPreparer() {
-            @Override
-            protected IRunUtil getRunUtil() {
-                return mMockRunUtil;
-            }
-        };
+        mPreparer = new MockPythonVirtualenvPreparer();
+        VtsPythonVirtualenvPreparer.PIP_RETRY = 0;
         mPreparer.mVenvDir = new File("");
         mPreparer.mDepModules.add("enum");
     }
@@ -131,10 +221,7 @@ public class VtsPythonVirtualenvPreparerTest {
             expect(mMockRunUtil.runTimedCmd(anyLong(), EasyMock.eq(mPreparer.getPipPath()),
                            EasyMock.eq("install"), EasyMock.eq("-r"),
                            EasyMock.eq(requirementFile.getAbsolutePath())))
-                    .andReturn(result)
-                    .times(VtsPythonVirtualenvPreparer.PIP_RETRY + 1);
-            mMockRunUtil.sleep(EasyMock.anyLong());
-            EasyMock.expectLastCall().times(VtsPythonVirtualenvPreparer.PIP_RETRY);
+                    .andReturn(result);
             EasyMock.replay(mMockRunUtil);
             IBuildInfo buildInfo = new BuildInfo();
             try {
@@ -162,19 +249,16 @@ public class VtsPythonVirtualenvPreparerTest {
                 .andReturn(result);
         expect(mMockRunUtil.runTimedCmd(anyLong(), EasyMock.eq(mPreparer.getPipPath()),
                        EasyMock.eq("install"), EasyMock.eq("enum")))
-                .andReturn(result)
-                .times(VtsPythonVirtualenvPreparer.PIP_RETRY + 1);
+                .andReturn(result);
         // If installing the dependency failed, an upgrade is attempted:
         expect(mMockRunUtil.runTimedCmd(anyLong(), EasyMock.eq(mPreparer.getPipPath()),
                        EasyMock.eq("install"), EasyMock.eq("--upgrade"), EasyMock.eq("enum")))
-                .andReturn(result)
-                .times(VtsPythonVirtualenvPreparer.PIP_RETRY + 1);
-        mMockRunUtil.sleep(EasyMock.anyLong());
-        EasyMock.expectLastCall().times(VtsPythonVirtualenvPreparer.PIP_RETRY);
+                .andReturn(result);
         EasyMock.replay(mMockRunUtil);
         IBuildInfo buildInfo = new BuildInfo();
         try {
             mPreparer.installDeps();
+            mPreparer.addPathToBuild(buildInfo);
             fail("installDeps succeeded despite a failed command");
         } catch (TargetSetupError e) {
             assertTrue(buildInfo.getFile("PYTHONPATH") == null);
@@ -206,42 +290,56 @@ public class VtsPythonVirtualenvPreparerTest {
                 .andReturn(result);
         EasyMock.replay(mMockRunUtil);
 
-        File testDir = FileUtil.createTempDir("vts-test-dir");
-        try {
-            assertTrue(mPreparer.createVirtualenv(testDir));
-        } finally {
-            FileUtil.recursiveDelete(testDir);
-        }
-        EasyMock.verify(mMockRunUtil);
+        // Create completion mark file success
+        mFile.createNewFileSuccess = true;
+
+        assertTrue(mPreparer.createVirtualenv());
     }
 
     /**
      * Tests the functionality of createVirtualenv.
+     * @throws IOException
+     */
+    @Test
+    public void test_initVirtualenv_creationSuccess_completionFail() {
+        // Create virutalenv dir command success
+        CommandResult result = new CommandResult();
+        result.setStatus(CommandStatus.SUCCESS);
+        expect(mMockRunUtil.runTimedCmd(EasyMock.anyInt(), EasyMock.eq("virtualenv"),
+                       EasyMock.anyObject(), EasyMock.anyObject(), EasyMock.anyObject()))
+                .andReturn(result);
+        EasyMock.replay(mMockRunUtil);
+
+        // Create completion mark file success
+        mFile.createNewFileSuccess = false;
+
+        try {
+            mPreparer.createVirtualenv();
+            assertTrue("IOException is expected", false);
+        } catch (IOException e) {
+            // Expected. test pass
+        }
+    }
+
+    /**
+     * Tests the functionality of createVirtualenv.
+     * @throws IOException
      */
     @Test
     public void test_initVirtualenv_creationFail_Errno26_waitSucceed() throws IOException {
         // Create virutalenv dir command success
-        CommandResult result = new CommandResult(CommandStatus.FAILED);
+        CommandResult result = new CommandResult();
+        result.setStatus(CommandStatus.FAILED);
         result.setStderr("...Errno 26...");
-        expect(mMockRunUtil.runTimedCmd(EasyMock.anyLong(), EasyMock.eq("virtualenv"),
+        expect(mMockRunUtil.runTimedCmd(EasyMock.anyInt(), EasyMock.eq("virtualenv"),
                        EasyMock.anyObject(), EasyMock.anyObject(), EasyMock.anyObject()))
-                .andReturn(result)
-                .once();
-        CommandResult nextResult = new CommandResult(CommandStatus.SUCCESS);
-        expect(mMockRunUtil.runTimedCmd(EasyMock.anyLong(), EasyMock.eq("virtualenv"),
-                       EasyMock.anyObject(), EasyMock.anyObject(), EasyMock.anyObject()))
-                .andReturn(nextResult)
-                .once();
-        mMockRunUtil.sleep(EasyMock.anyLong());
-
+                .andReturn(result);
         EasyMock.replay(mMockRunUtil);
-        File testDir = FileUtil.createTempDir("vts-test-dir");
-        try {
-            assertTrue(mPreparer.createVirtualenv(testDir));
-        } finally {
-            FileUtil.recursiveDelete(testDir);
-        }
-        EasyMock.verify(mMockRunUtil);
+
+        // Wait succeed
+        mPreparer.mock_createVirtualenv_waitForOtherProcessToCreateVirtualEnv = 1;
+
+        assertTrue(mPreparer.createVirtualenv());
     }
 
     /**
@@ -256,18 +354,13 @@ public class VtsPythonVirtualenvPreparerTest {
         result.setStderr("...Errno 26...");
         expect(mMockRunUtil.runTimedCmd(EasyMock.anyInt(), EasyMock.eq("virtualenv"),
                        EasyMock.anyObject(), EasyMock.anyObject(), EasyMock.anyObject()))
-                .andReturn(result)
-                .times(VtsPythonVirtualenvPreparer.PIP_RETRY + 1);
-        mMockRunUtil.sleep(EasyMock.anyLong());
-        EasyMock.expectLastCall().times(VtsPythonVirtualenvPreparer.PIP_RETRY);
+                .andReturn(result);
         EasyMock.replay(mMockRunUtil);
-        File testDir = FileUtil.createTempDir("vts-test-dir");
-        try {
-            assertFalse(mPreparer.createVirtualenv(testDir));
-        } finally {
-            FileUtil.recursiveDelete(testDir);
-        }
-        EasyMock.verify(mMockRunUtil);
+
+        // Wait failed
+        mPreparer.mock_createVirtualenv_waitForOtherProcessToCreateVirtualEnv = 0;
+
+        assertTrue(!mPreparer.createVirtualenv());
     }
 
     /**
@@ -285,12 +378,6 @@ public class VtsPythonVirtualenvPreparerTest {
                 .andReturn(result);
         EasyMock.replay(mMockRunUtil);
 
-        File testDir = FileUtil.createTempDir("vts-test-dir");
-        try {
-            assertFalse(mPreparer.createVirtualenv(testDir));
-        } finally {
-            FileUtil.recursiveDelete(testDir);
-        }
-        EasyMock.verify(mMockRunUtil);
+        assertTrue(!mPreparer.createVirtualenv());
     }
 }

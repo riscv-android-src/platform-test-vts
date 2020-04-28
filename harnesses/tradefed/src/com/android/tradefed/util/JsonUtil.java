@@ -17,10 +17,9 @@
 package com.android.tradefed.util;
 
 import com.android.tradefed.log.LogUtil.CLog;
-
-import org.json.JSONException;
+import org.json.JSONArray;
 import org.json.JSONObject;
-
+import org.json.JSONException;
 import java.util.Iterator;
 
 /**

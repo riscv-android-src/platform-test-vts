@@ -1,6 +1,5 @@
-#!/bin/bash
-
-# Copyright (C) 2019 The Android Open Source Project
+#
+# Copyright (C) 2016 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,15 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
 
-# A simple helper script that runs the VTS-Core harness unit tests
-
-VTS_CORE_DIR=`dirname $0`/../etc
-
-${VTS_CORE_DIR}/vts-core-tradefed run singleCommand host -n \
-  --console-result-reporter:suppress-passed-tests \
-  --class com.android.compatibility.common.tradefed.UnitTests \
-  --class com.android.compatibility.common.util.HostUnitTests \
-  --class com.android.compatibility.common.util.UnitTests \
-  --class com.android.compatibility.tradefed.VtsCoreTradefedTest
-  "$@"
+# List of variables to be clean before including Android.build.mk
+common_additional_dependencies :=
+common_cflags :=
+common_conlyflags :=
+common_cppflags :=
+common_c_includes :=

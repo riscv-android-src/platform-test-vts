@@ -12,21 +12,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# enable jni only if java build is supported, for PDK
+#ifneq ($(TARGET_BUILD_JAVA_SUPPORT_LEVEL),)
 
-# for drm tests
-vts_test_lib_packages += \
-    libvtswidevine \
+LOCAL_PATH := $(call my-dir)
 
-# for fuzz tests
-vts_test_lib_packages += \
-    libclang_rt.asan-arm-android \
-    libclang_rt.asan-aarch64-android \
-    libclang_rt.asan-i686-android \
-    libclang_rt.asan-x86_64-android \
-    libvts_func_fuzzer_utils \
-    libvts_proto_fuzzer \
-    libvts_proto_fuzzer_proto \
+include $(CLEAR_VARS)
 
-# for HAL interface hash test
-vts_test_lib_packages += \
-    libhidl-gen-hash \
+LOCAL_MODULE := libvts_agent_app_jni
+
+LOCAL_MODULE_TAGS := optional
+
+LOCAL_SRC_FILES := \
+  VtsAgentAppNativeMain.cpp
+
+LOCAL_CFLAGS := -Wall -Werror
+
+LOCAL_C_INCLUDES := $(JNI_H_INCLUDE)
+
+LOCAL_MULTILIB := both
+
+include $(BUILD_SHARED_LIBRARY)

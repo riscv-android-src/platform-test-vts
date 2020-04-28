@@ -12,21 +12,27 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
 
-# for drm tests
-vts_test_lib_packages += \
-    libvtswidevine \
+LOCAL_PATH := $(call my-dir)
 
-# for fuzz tests
-vts_test_lib_packages += \
-    libclang_rt.asan-arm-android \
-    libclang_rt.asan-aarch64-android \
-    libclang_rt.asan-i686-android \
-    libclang_rt.asan-x86_64-android \
-    libvts_func_fuzzer_utils \
-    libvts_proto_fuzzer \
-    libvts_proto_fuzzer_proto \
+include $(CLEAR_VARS)
 
-# for HAL interface hash test
-vts_test_lib_packages += \
-    libhidl-gen-hash \
+LOCAL_MODULE_TAGS := optional
+
+LOCAL_SRC_FILES := $(call all-java-files-under, src)
+
+LOCAL_PACKAGE_NAME := VtsAgentApp
+LOCAL_SDK_VERSION := current
+
+LOCAL_JNI_SHARED_LIBRARIES := \
+  libvts_agent_app_jni \
+
+LOCAL_MULTILIB := both
+
+LOCAL_PROGUARD_ENABLED := disabled
+LOCAL_DEX_PREOPT := false
+
+include $(BUILD_PACKAGE)
+
+include $(call all-makefiles-under, $(LOCAL_PATH))

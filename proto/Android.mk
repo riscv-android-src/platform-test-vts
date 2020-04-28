@@ -1,5 +1,4 @@
-#
-# Copyright (C) 2016 The Android Open Source Project
+# Copyright (C) 2017 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,20 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# for drm tests
-vts_test_lib_packages += \
-    libvtswidevine \
+LOCAL_PATH := $(call my-dir)
 
-# for fuzz tests
-vts_test_lib_packages += \
-    libclang_rt.asan-arm-android \
-    libclang_rt.asan-aarch64-android \
-    libclang_rt.asan-i686-android \
-    libclang_rt.asan-x86_64-android \
-    libvts_func_fuzzer_utils \
-    libvts_proto_fuzzer \
-    libvts_proto_fuzzer_proto \
+include $(CLEAR_VARS)
 
-# for HAL interface hash test
-vts_test_lib_packages += \
-    libhidl-gen-hash \
+LOCAL_MODULE := libvts_protos_host
+LOCAL_SRC_FILES := $(call all-proto-files-under, ./)
+LOCAL_PROTOC_OPTIMIZE_TYPE := full
+LOCAL_SOURCE_FILES_ALL_GENERATED := true
+LOCAL_MODULE_TAGS := optional
+
+include $(BUILD_HOST_JAVA_LIBRARY)

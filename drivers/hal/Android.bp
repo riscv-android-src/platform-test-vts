@@ -14,40 +14,11 @@
 // limitations under the License.
 //
 
-cc_test {
-    name: "VtsHalPowerTestCases",
-    multilib: {
-        lib32: {
-            suffix: "32",
-        },
-        lib64: {
-            suffix: "64",
-        },
-    },
-
-    shared_libs: [
-        "libdl",
-        "libhardware",
-    ],
-
-    whole_static_libs: ["libVtsGtestMain"],
-
-    static_libs: [
-        "libbase",
-        "libtinyxml2",
-        "liblog",
-        "libgtest",
-    ],
-
-    // Tag this module as a vts test artifact
-    test_suites: ["vts"],
-
-    srcs: ["hal_power_basic_test.cpp"],
-
-    cflags: [
-        "-Wall",
-        "-Wextra",
-        "-Wunused",
-        "-Werror",
-    ],
-}
+subdirs = [
+     "common",
+     "libcodecoverage",
+     "libdatatype",
+     "libmeasurement",
+     "replayer",
+     "server",
+]
