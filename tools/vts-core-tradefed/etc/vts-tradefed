@@ -85,7 +85,6 @@ if [ -z ${VTS_ROOT} ]; then
 fi;
 
 JAR_DIR=${VTS_ROOT}/android-vts/tools
-# TODO(b/149249068): Remove vts10-tradefed* after all VTS tests are converted
 JARS="tradefed
   loganalysis
   hosttestlib
@@ -93,8 +92,6 @@ JARS="tradefed
   compatibility-host-util-tests
   vts-tradefed
   vts-tradefed-tests
-  vts10-tradefed
-  vts10-tradefed-tests
   compatibility-common-util-tests
   compatibility-tradefed-tests"
 
@@ -134,5 +131,4 @@ for j in $(find ${VTS_ROOT}/android-vts/testcases -type f -name '*.jar'); do
 done
 
 VTS_TESTCASES=${VTS_ROOT}/android-vts/testcases/
-
 VTS_TESTCASES=${VTS_TESTCASES} java $RDBG_FLAG -Xmx4096m -XX:+HeapDumpOnOutOfMemoryError -cp ${JAR_PATH} -DVTS_ROOT=${VTS_ROOT} com.android.compatibility.common.tradefed.command.CompatibilityConsole "$@"

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2016 The Android Open Source Project
+# Copyright (C) 2020 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,21 +12,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
 
-# for drm tests
-vts_test_lib_packages += \
-    libvtswidevine \
+from proc_tests import KernelProcFileTestBase
 
-# for fuzz tests
-vts_test_lib_packages += \
-    libclang_rt.asan-arm-android \
-    libclang_rt.asan-aarch64-android \
-    libclang_rt.asan-i686-android \
-    libclang_rt.asan-x86_64-android \
-    libvts_func_fuzzer_utils \
-    libvts_proto_fuzzer \
-    libvts_proto_fuzzer_proto \
 
-# for HAL interface hash test
-vts_test_lib_packages += \
-    libhidl-gen-hash \
+class ProcCmdlineTest(KernelProcFileTestBase.KernelProcFileTestBase):
+    '''/proc/cmdline contains arguments passed to the kernel.'''
+
+    def parse_contents(self, contents):
+        if len(contents) == 0 or contents[-1] != '\n':
+            raise SyntaxError("missing newline")
+        return contents[:-1].split(' ')
+
+    def get_path(self):
+        return "/proc/cmdline"

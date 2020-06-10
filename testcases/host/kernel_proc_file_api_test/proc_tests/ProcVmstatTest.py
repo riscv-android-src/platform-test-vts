@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2016 The Android Open Source Project
+# Copyright (C) 2020 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,21 +12,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
 
-# for drm tests
-vts_test_lib_packages += \
-    libvtswidevine \
+from proc_tests import KernelProcFileTestBase
+from proc_tests.KernelProcFileTestBase import repeat_rule
 
-# for fuzz tests
-vts_test_lib_packages += \
-    libclang_rt.asan-arm-android \
-    libclang_rt.asan-aarch64-android \
-    libclang_rt.asan-i686-android \
-    libclang_rt.asan-x86_64-android \
-    libvts_func_fuzzer_utils \
-    libvts_proto_fuzzer \
-    libvts_proto_fuzzer_proto \
 
-# for HAL interface hash test
-vts_test_lib_packages += \
-    libhidl-gen-hash \
+class ProcVmstat(KernelProcFileTestBase.KernelProcFileTestBase):
+    '''/proc/vmstat shows virtual memory statistics from the kernel.'''
+
+    t_ignore = ' '
+
+    start = 'lines'
+
+    p_lines = repeat_rule('line')
+
+    def p_line(self, p):
+        'line : STRING NUMBER NEWLINE'
+        p[0] = [p[1], p[2]]
+
+    def get_path(self):
+        return "/proc/vmstat"
