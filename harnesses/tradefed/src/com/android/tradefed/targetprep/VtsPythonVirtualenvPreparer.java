@@ -275,7 +275,7 @@ public class VtsPythonVirtualenvPreparer implements ITargetPreparer, ITargetClea
                 mVenvDir = FileUtil.createTempDir(getMD5(buildInfo.getTestTag()) + "-virtualenv");
             }
             String virtualEnvPath = mVenvDir.getAbsolutePath();
-            CommandResult c = mRunUtil.runTimedCmd(BASE_TIMEOUT, "virtualenv", virtualEnvPath);
+            CommandResult c = mRunUtil.runTimedCmd(BASE_TIMEOUT, "virtualenv", "-p", "2", virtualEnvPath);
             if (c.getStatus() != CommandStatus.SUCCESS) {
                 CLog.e(String.format("Failed to create virtualenv with : %s.", virtualEnvPath));
                 throw new TargetSetupError("Failed to create virtualenv");
