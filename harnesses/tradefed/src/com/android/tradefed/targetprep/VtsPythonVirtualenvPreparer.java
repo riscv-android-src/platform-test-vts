@@ -316,8 +316,7 @@ public class VtsPythonVirtualenvPreparer implements IMultiTargetPreparer {
                 String virtualEnvPath = mVenvDir.getAbsolutePath();
                 CommandResult c;
                 if (mPythonVersion.length() == 0) {
-                    c = getRunUtil().runTimedCmd(BASE_TIMEOUT, "virtualenv", "-p", "2",
-                                                 virtualEnvPath);
+                    c = getRunUtil().runTimedCmd(BASE_TIMEOUT, "virtualenv", virtualEnvPath);
                 } else {
                     String[] cmd = new String[] {
                             "virtualenv", "-p", "python" + mPythonVersion, virtualEnvPath};
