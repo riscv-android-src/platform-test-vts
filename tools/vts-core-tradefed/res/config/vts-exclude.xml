@@ -13,16 +13,9 @@
      See the License for the specific language governing permissions and
      limitations under the License.
 -->
-<configuration description="Runs FastbootGetvarUserspaceTest">
-    <option name="test-suite-tag" value="apct" />
-    <option name="test-suite-tag" value="apct-junit" />
+<configuration description="Exclude certain tests in VTS suite with a reason specified">
 
-    <object type="module_controller" class="com.android.tradefed.testtype.suite.module.MinApiLevelModuleController">
-        <option name="min-api-level" value="30" />
-        <option name="api-level-prop" value="ro.product.first_api_level" />
-    </object>
+    <!-- b/154017337: The test is only applicable to vendor device with feature supported. -->
+    <option name="compatibility:exclude-filter" value="VirtualAbRequirementTest.EnabledOnLaunchR"/>
 
-    <test class="com.android.tradefed.testtype.HostTest" >
-        <option name="jar" value="FastbootGetvarUserspaceTest.jar" />
-    </test>
 </configuration>
