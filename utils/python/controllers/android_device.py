@@ -464,11 +464,10 @@ class AndroidDevice(object):
     @property
     def isTcpFastbootdMode(self):
         """True if the device is in tcp fastbootd mode."""
-        if self.serial in list_unauthorized_devices():
-            if self.fastboot.isFastbootOverTcp(self.serial):
-                out = self.fastboot.getvar("is-userspace").strip()
-                if ("is-userspace: yes") in out:
-                    return True
+        if self.fastboot.isFastbootOverTcp(self.serial):
+            out = self.fastboot.getvar("is-userspace").strip()
+            if ("is-userspace: yes") in out:
+                return True
         return False
 
     @property
