@@ -20,6 +20,10 @@ interface: {
       is_const: true
       is_callback: true
     }
+    arg: {
+      type: TYPE_SCALAR
+      scalar_type: "bool_t"
+    }
   }
 
   attribute: {

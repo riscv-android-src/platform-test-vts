@@ -255,8 +255,8 @@ bool FuzzerExtended_bt_interface_t::Fuzz(
         }
         cout << "Call an API." << endl;
         cout << "local_device = " << local_device;
-        *result = const_cast<void*>(reinterpret_cast<const void*>(local_device->init(
-        arg0)));
+        *result = const_cast<void*>(
+            reinterpret_cast<const void*>(local_device->init(arg0, false)));
         vector<float>* measured = vts_measurement.Stop();
         cout << "time " << (*measured)[0] << endl;
         cout << "called" << endl;
