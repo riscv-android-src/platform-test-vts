@@ -29,10 +29,14 @@ vts_hal_driver_libs := \
   android.hardware.audio.effect@6.0-vts.driver \
   android.hardware.authsecret@1.0-vts.driver \
   android.hardware.automotive.audiocontrol@1.0-vts.driver \
+  android.hardware.automotive.can@1.0-vts.driver \
   android.hardware.automotive.evs@1.0-vts.driver \
+  android.hardware.automotive.evs@1.1-vts.driver \
+  android.hardware.automotive.occupant_awareness@1.0-vts.driver \
   android.hardware.automotive.vehicle@2.0-vts.driver \
   android.hardware.biometrics.face@1.0-vts.driver \
   android.hardware.biometrics.fingerprint@2.1-vts.driver \
+  android.hardware.biometrics.fingerprint@2.2-vts.driver \
   android.hardware.bluetooth@1.0-vts.driver \
   android.hardware.boot@1.0-vts.driver \
   android.hardware.broadcastradio@1.0-vts.driver \
@@ -54,9 +58,11 @@ vts_hal_driver_libs := \
   android.hardware.configstore@1.2-vts.driver \
   android.hardware.confirmationui@1.0-vts.driver \
   android.hardware.contexthub@1.0-vts.driver \
+  android.hardware.contexthub@1.1-vts.driver \
   android.hardware.drm@1.0-vts.driver \
   android.hardware.drm@1.1-vts.driver \
   android.hardware.drm@1.2-vts.driver \
+  android.hardware.drm@1.3-vts.driver \
   android.hardware.dumpstate@1.0-vts.driver \
   android.hardware.gatekeeper@1.0-vts.driver \
   android.hardware.gnss@1.0-vts.driver \
@@ -73,6 +79,7 @@ vts_hal_driver_libs := \
   android.hardware.graphics.mapper@2.0-vts.driver \
   android.hardware.graphics.mapper@2.1-vts.driver \
   android.hardware.graphics.mapper@3.0-vts.driver \
+  android.hardware.graphics.mapper@4.0-vts.driver \
   android.hardware.health.storage@1.0-vts.driver \
   android.hardware.health@1.0-vts.driver \
   android.hardware.health@2.0-vts.driver \
@@ -107,9 +114,11 @@ vts_hal_driver_libs := \
   android.hardware.secure_element@1.0-vts.driver \
   android.hardware.sensors@1.0-vts.driver \
   android.hardware.sensors@2.0-vts.driver \
+  android.hardware.sensors@2.1-vts.driver \
   android.hardware.soundtrigger@2.0-vts.driver \
   android.hardware.soundtrigger@2.1-vts.driver \
   android.hardware.soundtrigger@2.2-vts.driver \
+  android.hardware.soundtrigger@2.3-vts.driver \
   android.hardware.tests.memory@1.0-vts.driver \
   android.hardware.tests.msgq@1.0-vts.driver \
   android.hardware.tetheroffload.config@1.0-vts.driver \
@@ -132,11 +141,13 @@ vts_hal_driver_libs := \
   android.hardware.wifi@1.0-vts.driver \
   android.hardware.wifi@1.1-vts.driver \
   android.hardware.wifi@1.2-vts.driver \
+  android.hardware.wifi@1.4-vts.driver \
   android.hardware.wifi.hostapd@1.0-vts.driver \
   android.hardware.wifi.offload@1.0-vts.driver \
   android.hardware.wifi.supplicant@1.0-vts.driver \
   android.hardware.wifi.supplicant@1.1-vts.driver \
   android.hardware.wifi.supplicant@1.2-vts.driver \
+  android.hardware.wifi.supplicant@1.3-vts.driver \
   android.hidl.memory.block@1.0-vts.driver \
   android.hidl.memory.token@1.0-vts.driver \
   android.hidl.safe_union@1.0-vts.driver \
@@ -159,10 +170,14 @@ vts_hal_profiler_libs := \
   android.hardware.audio.effect@6.0-vts.profiler \
   android.hardware.authsecret@1.0-vts.profiler \
   android.hardware.automotive.audiocontrol@1.0-vts.profiler \
+  android.hardware.automotive.can@1.0-vts.profiler \
   android.hardware.automotive.evs@1.0-vts.profiler \
+  android.hardware.automotive.evs@1.1-vts.profiler \
+  android.hardware.automotive.occupant_awareness@1.0-vts.profiler \
   android.hardware.automotive.vehicle@2.0-vts.profiler \
   android.hardware.biometrics.face@1.0-vts.profiler \
   android.hardware.biometrics.fingerprint@2.1-vts.profiler \
+  android.hardware.biometrics.fingerprint@2.2-vts.profiler \
   android.hardware.bluetooth@1.0-vts.profiler \
   android.hardware.boot@1.0-vts.profiler \
   android.hardware.broadcastradio@1.0-vts.profiler \
@@ -184,8 +199,11 @@ vts_hal_profiler_libs := \
   android.hardware.configstore@1.2-vts.profiler \
   android.hardware.confirmationui@1.0-vts.profiler \
   android.hardware.contexthub@1.0-vts.profiler \
+  android.hardware.contexthub@1.1-vts.profiler \
   android.hardware.drm@1.0-vts.profiler \
   android.hardware.drm@1.1-vts.profiler \
+  android.hardware.drm@1.2-vts.profiler \
+  android.hardware.drm@1.3-vts.profiler \
   android.hardware.dumpstate@1.0-vts.profiler \
   android.hardware.gatekeeper@1.0-vts.profiler \
   android.hardware.gnss@1.0-vts.profiler \
@@ -199,6 +217,7 @@ vts_hal_profiler_libs := \
   android.hardware.graphics.mapper@2.0-vts.profiler \
   android.hardware.graphics.mapper@2.1-vts.profiler \
   android.hardware.graphics.mapper@3.0-vts.profiler \
+  android.hardware.graphics.mapper@4.0-vts.profiler \
   android.hardware.health.storage@1.0-vts.profiler \
   android.hardware.health@1.0-vts.profiler \
   android.hardware.health@2.0-vts.profiler \
@@ -230,9 +249,11 @@ vts_hal_profiler_libs := \
   android.hardware.secure_element@1.0-vts.profiler \
   android.hardware.sensors@1.0-vts.profiler \
   android.hardware.sensors@2.0-vts.profiler \
+  android.hardware.sensors@2.1-vts.profiler \
   android.hardware.soundtrigger@2.0-vts.profiler \
   android.hardware.soundtrigger@2.1-vts.profiler \
   android.hardware.soundtrigger@2.2-vts.profiler \
+  android.hardware.soundtrigger@2.3-vts.profiler \
   android.hardware.tests.memory@1.0-vts.profiler \
   android.hardware.tests.msgq@1.0-vts.profiler \
   android.hardware.tetheroffload.config@1.0-vts.profiler \
@@ -256,11 +277,13 @@ vts_hal_profiler_libs := \
   android.hardware.wifi@1.0-vts.profiler \
   android.hardware.wifi@1.1-vts.profiler \
   android.hardware.wifi@1.2-vts.profiler \
+  android.hardware.wifi@1.4-vts.profiler \
   android.hardware.wifi.hostapd@1.0-vts.profiler \
   android.hardware.wifi.offload@1.0-vts.profiler \
   android.hardware.wifi.supplicant@1.0-vts.profiler \
   android.hardware.wifi.supplicant@1.1-vts.profiler \
   android.hardware.wifi.supplicant@1.2-vts.profiler \
+  android.hardware.wifi.supplicant@1.3-vts.profiler \
   android.hidl.memory.block@1.0-vts.profiler \
   android.hidl.memory.token@1.0-vts.profiler \
   android.system.net.netd@1.0-vts.profiler \
@@ -278,8 +301,10 @@ vts_hal_test_bins := \
   VtsHalAudioEffectV6_0TargetTest \
   VtsHalAudioPolicyV1_0TargetTest \
   VtsHalAuthSecretV1_0TargetTest \
+  VtsHalAutomotiveDisplayV1_0TargetTest \
   VtsHalBiometricsFaceV1_0TargetTest \
   VtsHalBiometricsFingerprintV2_1TargetTest \
+  VtsHalBiometricsFingerprintV2_2TargetTest \
   VtsHalBluetoothV1_0TargetTest \
   VtsHalBootV1_0TargetTest \
   VtsHalBroadcastradioV1_0TargetTest \
@@ -287,26 +312,34 @@ vts_hal_test_bins := \
   VtsHalBroadcastradioV2_0TargetTest \
   VtsHalCameraProviderV2_4TargetTest \
   VtsHalCameraServiceV2_0TargetTest \
+  VtsHalCanBusV1_0TargetTest \
+  VtsHalCanBusVirtualV1_0TargetTest \
+  VtsHalCanControllerV1_0TargetTest \
   VtsHalCasV1_0TargetTest \
   VtsHalCasV1_1TargetTest \
   VtsHalCasV1_2TargetTest \
   VtsHalConfigstoreV1_0TargetTest \
   VtsHalContexthubV1_0TargetTest \
+  VtsHalContexthubV1_1TargetTest \
   VtsHalDrmV1_0TargetTest \
   VtsHalDrmV1_1TargetTest \
   VtsHalDrmV1_2TargetTest \
+  VtsHalDrmV1_3TargetTest \
   VtsHalDumpstateV1_0TargetTest \
   VtsHalEvsV1_0TargetTest \
+  VtsHalEvsV1_1TargetTest \
   VtsHalGatekeeperV1_0TargetTest \
   VtsHalGnssV1_0TargetTest \
   VtsHalGnssV1_1TargetTest \
   VtsHalGnssV2_0TargetTest \
+  VtsHalGnssV2_1TargetTest \
   VtsHalGraphicsComposerV2_1TargetTest \
   VtsHalGraphicsComposerV2_2TargetTest \
   VtsHalGraphicsComposerV2_3TargetTest \
   VtsHalGraphicsMapperV2_0TargetTest \
   VtsHalGraphicsMapperV2_1TargetTest \
   VtsHalGraphicsMapperV3_0TargetTest \
+  VtsHalGraphicsMapperV4_0TargetTest \
   VtsHalHealthStorageV1_0TargetTest \
   VtsHalHealthV1_0TargetTest \
   VtsHalHealthV2_0TargetTest \
@@ -337,6 +370,7 @@ vts_hal_test_bins := \
   VtsHalNfcV1_0TargetTest \
   VtsHalNfcV1_1TargetTest \
   VtsHalNfcV1_2TargetTest \
+  VtsHalOccupantAwarenessV1_0TargetTest \
   VtsHalOemLockV1_0TargetTest \
   VtsHalPowerV1_0TargetTest \
   VtsHalPowerV1_1TargetTest \
@@ -357,9 +391,11 @@ vts_hal_test_bins := \
   VtsHalSecureElementV1_0TargetTest \
   VtsHalSensorsV1_0TargetTest \
   VtsHalSensorsV2_0TargetTest \
+  VtsHalSensorsV2_1TargetTest \
   VtsHalSoundtriggerV2_0TargetTest \
   VtsHalSoundtriggerV2_1TargetTest \
   VtsHalSoundtriggerV2_2TargetTest \
+  VtsHalSoundtriggerV2_3TargetTest \
   VtsHalStatsV1_0TargetTest \
   VtsHalTetheroffloadConfigV1_0TargetTest \
   VtsHalTetheroffloadControlV1_0TargetTest \
@@ -381,17 +417,21 @@ vts_hal_test_bins := \
   VtsHalWeaverV1_0TargetTest \
   VtsHalWifiHostapdV1_0TargetTest \
   VtsHalWifiHostapdV1_1TargetTest \
+  VtsHalWifiHostapdV1_2TargetTest \
   VtsHalWifiKeystoreV1_0TargetTest \
   VtsHalWifiV1_0TargetTest \
   VtsHalWifiV1_1TargetTest \
   VtsHalWifiV1_2TargetTest \
   VtsHalWifiV1_3TargetTest \
+  VtsHalWifiApV1_0TargetTest \
+  VtsHalWifiApV1_4TargetTest \
   VtsHalWifiNanV1_0TargetTest \
   VtsHalWifiNanV1_2TargetTest \
   VtsHalWifiOffloadV1_0TargetTest \
   VtsHalWifiSupplicantV1_0TargetTest \
   VtsHalWifiSupplicantV1_1TargetTest \
   VtsHalWifiSupplicantV1_2TargetTest \
+  VtsHalWifiSupplicantV1_3TargetTest \
   VtsHalWifiSupplicantP2pV1_0TargetTest \
   VtsHalWifiSupplicantP2pV1_2TargetTest \
   VtsHidlAllocatorV1_0TargetTest \
