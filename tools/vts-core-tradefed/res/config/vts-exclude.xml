@@ -16,6 +16,15 @@
 <configuration description="Exclude certain tests in VTS suite with a reason specified">
 
     <!-- b/154017337: The test is only applicable to vendor device with feature supported. -->
-    <option name="compatibility:exclude-filter" value="VirtualAbRequirementTest.EnabledOnLaunchR"/>
+    <option name="compatibility:exclude-filter" value="vts_virtual_ab_test VirtualAbRequirementTest.EnabledOnLaunchR"/>
+
+    <!-- b/157402175: The vendor implementation doesn't comply GSI -->
+    <option name="compatibility:exclude-filter" value="VtsHalConfirmationUIV1_0TargetTest *ConfirmationUIHidlTest.AbortTest/*"/>
+    <option name="compatibility:exclude-filter" value="VtsHalConfirmationUIV1_0TargetTest *ConfirmationUIHidlTest.PortableMessageTest1/*"/>
+    <option name="compatibility:exclude-filter" value="VtsHalConfirmationUIV1_0TargetTest *ConfirmationUIHidlTest.PortableMessageTest1Magnified/*"/>
+    <option name="compatibility:exclude-filter" value="VtsHalConfirmationUIV1_0TargetTest *ConfirmationUIHidlTest.PortableMessageTest2/*"/>
+    <option name="compatibility:exclude-filter" value="VtsHalConfirmationUIV1_0TargetTest *ConfirmationUIHidlTest.PortableMessageTest2Magnified/*"/>
+    <option name="compatibility:exclude-filter" value="VtsHalConfirmationUIV1_0TargetTest *ConfirmationUIHidlTest.UserOkTest/*"/>
+    <option name="compatibility:exclude-filter" value="VtsHalConfirmationUIV1_0TargetTest *ConfirmationUIHidlTest.UserCancelTest/*"/>
 
 </configuration>
