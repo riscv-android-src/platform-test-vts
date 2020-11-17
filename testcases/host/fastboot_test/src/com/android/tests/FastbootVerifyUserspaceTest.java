@@ -91,7 +91,7 @@ public class FastbootVerifyUserspaceTest extends BaseHostJUnit4Test {
     @Test
     public void testFastbootdSlotOperations() throws Exception {
         CommandResult result = mRunUtil.runTimedCmd(MAX_CMD_RUN_TIME, mFuzzyFastbootPath,
-                String.format("--serial=%s", mDevice.getSerialNumber()),
+                String.format("--serial=%s", mDevice.getFastbootSerialNumber()),
                 "--gtest_filter=Conformance.Slots:Conformance.SetActive");
         Assert.assertEquals(CommandStatus.SUCCESS, result.getStatus());
     }
@@ -100,7 +100,7 @@ public class FastbootVerifyUserspaceTest extends BaseHostJUnit4Test {
     @Test
     public void testLogicalPartitionCommands() throws Exception {
         CommandResult result = mRunUtil.runTimedCmd(MAX_CMD_RUN_TIME, mFuzzyFastbootPath,
-                String.format("--serial=%s", mDevice.getSerialNumber()),
+                String.format("--serial=%s", mDevice.getFastbootSerialNumber()),
                 "--gtest_filter=LogicalPartitionCompliance.GetVarIsLogical:LogicalPartitionCompliance.SuperPartition");
         Assert.assertEquals(CommandStatus.SUCCESS, result.getStatus());
     }
@@ -116,7 +116,7 @@ public class FastbootVerifyUserspaceTest extends BaseHostJUnit4Test {
     @Test
     public void testFastbootReboot() throws Exception {
         CommandResult result = mRunUtil.runTimedCmd(MAX_CMD_RUN_TIME, mFuzzyFastbootPath,
-                String.format("--serial=%s", mDevice.getSerialNumber()),
+                String.format("--serial=%s", mDevice.getFastbootSerialNumber()),
                 "--gtest_filter=LogicalPartitionCompliance.FastbootRebootTest");
         Assert.assertEquals(CommandStatus.SUCCESS, result.getStatus());
     }
@@ -125,7 +125,7 @@ public class FastbootVerifyUserspaceTest extends BaseHostJUnit4Test {
     @Test
     public void testLogicalPartitionFlashing() throws Exception {
         CommandResult result = mRunUtil.runTimedCmd(MAX_CMD_RUN_TIME, mFuzzyFastbootPath,
-                String.format("--serial=%s", mDevice.getSerialNumber()),
+                String.format("--serial=%s", mDevice.getFastbootSerialNumber()),
                 "--gtest_filter=LogicalPartitionCompliance.CreateResizeDeleteLP");
         Assert.assertEquals(CommandStatus.SUCCESS, result.getStatus());
     }
