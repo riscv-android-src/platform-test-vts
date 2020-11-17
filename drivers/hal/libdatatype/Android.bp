@@ -35,6 +35,9 @@ cc_library_shared {
         "libprotobuf-cpp-full",
         "libvts_multidevice_proto",
     ],
+    header_libs: [
+        "libhardware_headers",
+    ],
     export_shared_lib_headers: [
         "libcamera_metadata",
     ],
