@@ -14,7 +14,7 @@
 #   limitations under the License.
 
 from subprocess import Popen, PIPE
-
+import os
 import socket
 
 
@@ -41,14 +41,35 @@ def exe_cmd(*cmds):
     return err
 
 def isFastbootOverTcp(serial):
-    token = serial.split(':')
-    if len(token) == 2:
-        try:
-            socket.inet_aton(token[0])
-            return True
-        except socket.error:
-            return False
+    if '%' in serial:      # IPv6 link-local address
+        token = serial.split('%')
+        if len(token) == 2:
+            try:
+                socket.inet_pton(socket.AF_INET6, token[0])
+                return True
+            except socket.error:
+                return False
+    elif ':' in serial:    # IPv4 IP address
+        token = serial.split(':')
+        if len(token) == 2:
+            try:
+                socket.inet_aton(token[0])
+                return True
+            except socket.error:
+                return False
     return False
+
+def fastbootSerial(serial):
+    if isFastbootOverTcp(serial):
+        return "tcp:" + os.getenv(
+            "FASTBOOT_SERIAL_{}".format(serial
+                                        .replace(':', '_')
+                                        .replace('%', '_')
+                                        .replace('.', '_')
+                                        .replace('[', '_')
+                                        .replace(']', '_')),
+            serial[:serial.rindex(':')])
+    return serial
 
 class FastbootError(Exception):
     """Raised when there is an error in fastboot operations."""
@@ -66,10 +87,7 @@ class FastbootProxy():
     def __init__(self, serial=""):
         self.serial = serial
         if serial:
-            if isFastbootOverTcp(serial):
-                self.fastboot_str = "fastboot -s tcp:{}".format(serial[:serial.index(':')])
-            else:
-                self.fastboot_str = "fastboot -s {}".format(serial)
+            self.fastboot_str = "fastboot -s {}".format(fastbootSerial(serial))
         else:
             self.fastboot_str = "fastboot"
 
