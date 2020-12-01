@@ -48,6 +48,13 @@ class VtsFastbootVerificationTest(base_test.BaseTestClass):
                                            "fuzzy_fastboot")
         self.dut.cleanUp()
         self.dut.adb.reboot_fastboot()
+
+        # wait till the device is initialised in proper state.
+        # devices with ethernet in recovery takes sometime to communicate via fastboot.
+        # Insuch cases self diagnosis marks the testcases as failure, to accommodate such
+        # scenarios, we add this check here
+        while not self.dut.Heal():
+          pass
         # The below command blocks until the device enters fastbootd mode to
         # ensure that the device is in fastbootd mode when setUpClass exits.
         # If this is not done, VTS self-diagnosis tries to recover the
@@ -89,6 +96,11 @@ class VtsFastbootVerificationTest(base_test.BaseTestClass):
         ]
         retcode = subprocess.call(fastboot_gtest_cmd_reboot_test)
         asserts.assertTrue(retcode == 0, "Error in fastbootd reboot test")
+        # wait till the device is ready for next testcase after reboot. To prevent
+        # self diagnosis marking as failure
+        while not self.dut.Heal():
+            pass
+
 
     def testLogicalPartitionFlashing(self):
         """Runs fuzzy_fastboot to verify the commands to reboot into fastbootd and bootloader."""
