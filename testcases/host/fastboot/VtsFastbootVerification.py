@@ -23,6 +23,7 @@ from vts.runners.host import asserts
 from vts.runners.host import base_test
 from vts.runners.host import test_runner
 from vts.utils.python.android import api
+from vts.utils.python.controllers import fastboot
 
 FASTBOOT_VAR_SUPER_PARTITION_NAME = "super-partition-name"
 
@@ -47,6 +48,13 @@ class VtsFastbootVerificationTest(base_test.BaseTestClass):
                                            "fuzzy_fastboot")
         self.dut.cleanUp()
         self.dut.adb.reboot_fastboot()
+
+        # wait till the device is initialised in proper state.
+        # devices with ethernet in recovery takes sometime to communicate via fastboot.
+        # Insuch cases self diagnosis marks the testcases as failure, to accommodate such
+        # scenarios, we add this check here
+        while not self.dut.Heal():
+          pass
         # The below command blocks until the device enters fastbootd mode to
         # ensure that the device is in fastbootd mode when setUpClass exits.
         # If this is not done, VTS self-diagnosis tries to recover the
@@ -58,7 +66,7 @@ class VtsFastbootVerificationTest(base_test.BaseTestClass):
         """Runs fuzzy_fastboot gtest to verify slot operations in fastbootd implementation."""
         # Test slot operations and getvar partition-type
         fastboot_gtest_cmd_slot_operations = [
-            "%s" % self.gtest_bin_path, "--serial=%s" % self.dut.serial,
+            "%s" % self.gtest_bin_path, "--serial=%s" % fastboot.fastbootSerial(self.dut.serial),
             "--gtest_filter=Conformance.Slots:Conformance.SetActive"
         ]
         # TODO(b/117181762): Add a serial number argument to fuzzy_fastboot.
@@ -68,7 +76,7 @@ class VtsFastbootVerificationTest(base_test.BaseTestClass):
     def testLogicalPartitionCommands(self):
         """Runs fuzzy_fastboot to verify getvar commands related to logical partitions."""
         fastboot_gtest_cmd_logical_partition_compliance = [
-            "%s" % self.gtest_bin_path, "--serial=%s" % self.dut.serial,
+            "%s" % self.gtest_bin_path, "--serial=%s" % fastboot.fastbootSerial(self.dut.serial),
             "--gtest_filter=LogicalPartitionCompliance.GetVarIsLogical:LogicalPartitionCompliance.SuperPartition"
         ]
         retcode = subprocess.call(fastboot_gtest_cmd_logical_partition_compliance)
@@ -83,16 +91,21 @@ class VtsFastbootVerificationTest(base_test.BaseTestClass):
     def testFastbootReboot(self):
         """Runs fuzzy_fastboot to verify the commands to reboot into fastbootd and bootloader."""
         fastboot_gtest_cmd_reboot_test = [
-            "%s" % self.gtest_bin_path, "--serial=%s" % self.dut.serial,
+            "%s" % self.gtest_bin_path, "--serial=%s" % fastboot.fastbootSerial(self.dut.serial),
             "--gtest_filter=LogicalPartitionCompliance.FastbootRebootTest"
         ]
         retcode = subprocess.call(fastboot_gtest_cmd_reboot_test)
         asserts.assertTrue(retcode == 0, "Error in fastbootd reboot test")
+        # wait till the device is ready for next testcase after reboot. To prevent
+        # self diagnosis marking as failure
+        while not self.dut.Heal():
+            pass
+
 
     def testLogicalPartitionFlashing(self):
         """Runs fuzzy_fastboot to verify the commands to reboot into fastbootd and bootloader."""
         fastboot_gtest_cmd_lp_flashing = [
-            "%s" % self.gtest_bin_path, "--serial=%s" % self.dut.serial,
+            "%s" % self.gtest_bin_path, "--serial=%s" % fastboot.fastbootSerial(self.dut.serial),
             "--gtest_filter=LogicalPartitionCompliance.CreateResizeDeleteLP"
         ]
         retcode = subprocess.call(fastboot_gtest_cmd_lp_flashing)
