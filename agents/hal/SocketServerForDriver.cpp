@@ -17,11 +17,13 @@
 
 #include "SocketServerForDriver.h"
 
+#include <chrono>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <string>
+#include <thread>
 
 #include <android-base/logging.h>
 
@@ -61,6 +63,10 @@ void SocketServerForDriver::RpcCallToRunner(
     exit(-1);
     return;
   }
+
+  // FIXME Workaround patch for the issue of losing payload in the host tool.
+  //       If root cause is resolved, it should be removed.
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   VtsDriverCommUtil util(sockfd);
   if (!util.VtsSocketSendMessage(message)) return;
