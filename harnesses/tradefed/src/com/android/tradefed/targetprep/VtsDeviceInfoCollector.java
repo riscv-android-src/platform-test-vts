@@ -105,43 +105,34 @@ public class VtsDeviceInfoCollector implements ITargetPreparer {
         // The {build_device} in {ro.odm.build.fingerprint} can be {ro.product.device} or
         // {ro.product.odm.device}_{ro.boot.product.hardware.sku}. The latter one is rewritten as
         // {ro.product.odm.device}.
-        String odmBuildFingerprint = device.getProperty("ro.odm.build.fingerprint");
-        String[] splitBuildFingerprint;
-        String buildVersionIncremental;
-        if (!Strings.isNullOrEmpty(odmBuildFingerprint)) {
-            splitBuildFingerprint = odmBuildFingerprint.split("/");
+        String buildFingerprint = device.getProperty("ro.odm.build.fingerprint");
+        String buildVersionIncremental = null;
+        if (!Strings.isNullOrEmpty(buildFingerprint)) {
+            String[] splitBuildFingerprint = buildFingerprint.split("/");
+            if (splitBuildFingerprint.length <= 2) {
+                throw new TargetSetupError("Cannot parse ODM fingerprint: " + buildFingerprint,
+                        device.getDeviceDescriptor());
+            }
             // Need root to read that property
             buildVersionIncremental = device.getProperty("ro.odm.build.version.incremental");
 
             String odmDevice = device.getProperty("ro.product.odm.device");
             String sku = device.getProperty("ro.boot.product.hardware.sku");
-            if (splitBuildFingerprint.length > 2
-                    && !Strings.isNullOrEmpty(odmDevice)
-                    && !Strings.isNullOrEmpty(sku)) {
+            if (!Strings.isNullOrEmpty(odmDevice) && !Strings.isNullOrEmpty(sku)) {
                 String odmDeviceAndSku = odmDevice + "_" + sku;
                 if (splitBuildFingerprint[2].startsWith(odmDeviceAndSku + ":")) {
-                    splitBuildFingerprint[2] =
-                            odmDevice
-                                    + splitBuildFingerprint[2].substring(odmDeviceAndSku.length());
+                    splitBuildFingerprint[2] = odmDevice
+                            + splitBuildFingerprint[2].substring(odmDeviceAndSku.length());
+                    buildFingerprint = String.join("/", splitBuildFingerprint);
                 }
             }
         } else {
-            String vendorBuildFingerprint = device.getProperty("ro.vendor.build.fingerprint");
-            splitBuildFingerprint = nullToEmpty(vendorBuildFingerprint).split("/");
+            buildFingerprint = device.getProperty("ro.vendor.build.fingerprint");
             // Need root to read that property
             buildVersionIncremental = device.getProperty("ro.vendor.build.version.incremental");
         }
 
-        // The {build_product} in {ro.odm.build.fingerprint} or {ro.vendor.build.fingerprint} can
-        // be different from {ro.product.name} defined by the system. The {build_product} is
-        // rewritten as {ro.product.name}.
-        String productName = device.getProperty("ro.product.name");
-        if (splitBuildFingerprint.length > 1 && !Strings.isNullOrEmpty(productName)) {
-            splitBuildFingerprint[1] = productName;
-        }
-
-        buildInfo.addBuildAttribute(
-                "cts:build_fingerprint", String.join("/", splitBuildFingerprint));
+        buildInfo.addBuildAttribute("cts:build_fingerprint", nullToEmpty(buildFingerprint));
         buildInfo.addBuildAttribute(
                 "cts:build_version_incremental", nullToEmpty(buildVersionIncremental));
     }
