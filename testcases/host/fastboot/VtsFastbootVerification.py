@@ -44,8 +44,10 @@ class VtsFastbootVerificationTest(base_test.BaseTestClass):
         if self.dut.getLaunchApiLevel() <= api.PLATFORM_API_LEVEL_P:
           return
         #Skip for automotive with Android Q or lower
+        self.skipped = False
         if self.dut.getLaunchApiLevel() <= api.PLATFORM_API_LEVEL_Q and \
            self.dut.getProp("ro.hardware.type") == "automotive":
+          self.skipped = True
           return
         self.shell = self.dut.shell
         self.gtest_bin_path = os.path.join("host", "nativetest64", "fuzzy_fastboot",
@@ -67,8 +69,7 @@ class VtsFastbootVerificationTest(base_test.BaseTestClass):
         self.dut.fastboot.getvar("is-userspace")
 
     def testFastbootdSlotOperations(self):
-        if self.dut.getLaunchApiLevel() <= api.PLATFORM_API_LEVEL_Q and \
-           self.dut.getProp("ro.hardware.type") == "automotive":
+        if self.skipped:
           return
         """Runs fuzzy_fastboot gtest to verify slot operations in fastbootd implementation."""
         # Test slot operations and getvar partition-type
@@ -81,8 +82,7 @@ class VtsFastbootVerificationTest(base_test.BaseTestClass):
         asserts.assertTrue(retcode == 0, "Incorrect slot operations")
 
     def testLogicalPartitionCommands(self):
-        if self.dut.getLaunchApiLevel() <= api.PLATFORM_API_LEVEL_Q and \
-           self.dut.getProp("ro.hardware.type") == "automotive":
+        if self.skipped:
           return
         """Runs fuzzy_fastboot to verify getvar commands related to logical partitions."""
         fastboot_gtest_cmd_logical_partition_compliance = [
@@ -93,8 +93,7 @@ class VtsFastbootVerificationTest(base_test.BaseTestClass):
         asserts.assertTrue(retcode == 0, "Error in logical partition operations")
 
     def testSuperPartitionName(self):
-        if self.dut.getLaunchApiLevel() <= api.PLATFORM_API_LEVEL_Q and \
-           self.dut.getProp("ro.hardware.type") == "automotive":
+        if self.skipped:
           return
         """Devices launching with DAP must have a super partition named 'super'"""
         out = self.dut.fastboot.getvar("super-partition-name").strip()
@@ -102,8 +101,7 @@ class VtsFastbootVerificationTest(base_test.BaseTestClass):
                            "Devices launching with DAP must have a 'super' partition")
 
     def testFastbootReboot(self):
-        if self.dut.getLaunchApiLevel() <= api.PLATFORM_API_LEVEL_Q and \
-           self.dut.getProp("ro.hardware.type") == "automotive":
+        if self.skipped:
           return
         """Runs fuzzy_fastboot to verify the commands to reboot into fastbootd and bootloader."""
         fastboot_gtest_cmd_reboot_test = [
@@ -119,8 +117,7 @@ class VtsFastbootVerificationTest(base_test.BaseTestClass):
 
 
     def testLogicalPartitionFlashing(self):
-        if self.dut.getLaunchApiLevel() <= api.PLATFORM_API_LEVEL_Q and \
-           self.dut.getProp("ro.hardware.type") == "automotive":
+        if self.skipped:
           return
         """Runs fuzzy_fastboot to verify the commands to reboot into fastbootd and bootloader."""
         fastboot_gtest_cmd_lp_flashing = [
