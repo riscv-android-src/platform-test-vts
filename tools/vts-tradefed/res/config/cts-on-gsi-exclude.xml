@@ -291,4 +291,7 @@
 
     <!-- b/111167329: CtsCameraTestCases failure -->
     <option name="compatibility:exclude-filter" value="CtsCameraTestCases android.hardware.camera2.cts.SurfaceViewPreviewTest#testSurfaceSet"/>
+
+    <!-- b/183636777 Remove CtsShortcutManagerPackage4 from cts-on-gsi -->
+    <option name="compatibility:exclude-filter" value="CtsShortcutManagerPackage4" />
 </configuration>
