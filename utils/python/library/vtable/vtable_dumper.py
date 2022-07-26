@@ -21,6 +21,7 @@ Example usage:
         print('\n\n'.join(str(vtable) for vtable in dumper.DumpVtables()))
 """
 
+from asyncio.log import logger
 import bisect
 
 from vts.utils.python.library import elf_parser
@@ -126,6 +127,7 @@ class VtableDumper(elf_parser.ElfParser):
             consts.EM_AARCH64: (consts.R_AARCH64_ABS64, consts.R_AARCH64_RELATIVE),
             consts.EM_386: (consts.R_386_32, consts.R_386_RELATIVE),
             consts.EM_X86_64: (consts.R_X86_64_64, consts.R_X86_64_RELATIVE),
+            consts.EM_RISCV: (consts.R_RISCV_64, consts.R_RISCV_RELATIVE),
         }
         if machine in rel_type:
             rel_abs_type, rel_relative_type = rel_type[machine]
